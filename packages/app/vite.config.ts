@@ -30,7 +30,8 @@ export default defineConfig({
     sentry,
   ] as any,
   server: {
-    host: "0.0.0.0",
+    // Okutobus: development server listens on this laptop only (privacy). Use --host to expose it.
+    host: "127.0.0.1",
     allowedHosts: true,
     port: 3000,
   },

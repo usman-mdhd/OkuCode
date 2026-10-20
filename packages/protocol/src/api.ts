@@ -192,9 +192,9 @@ const makeApiFromGroup = <
     .add(ConfigGroup.middleware(locationMiddleware))
     .annotateMerge(
       OpenApi.annotations({
-        title: "opencode HttpApi",
+        title: "OkuCode API",
         version: "0.0.1",
-        description: "Experimental HttpApi surface for selected instance routes.",
+        description: "OkuCode (Okutobus Technologies) local server API. Based on the OpenCode HttpApi.",
       }),
     )
     .middleware(Authorization)

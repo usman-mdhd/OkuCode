@@ -1,6 +1,10 @@
 #!/bin/sh
 # OkuCode (Okutobus Technologies) — run the CLI from this source checkout.
 # Usage: add this folder's bin/ to PATH, then run `okucode` from any project directory.
+#
+#   okucode                 terminal UI in the current folder
+#   okucode web [--port N]  web UI + API on this laptop (http://127.0.0.1:4096 by default)
+#   okucode serve           API server only (see `okucode serve --help`)
 set -e
 SELF="$0"
 while [ -L "$SELF" ]; do
@@ -9,9 +13,39 @@ while [ -L "$SELF" ]; do
 done
 ROOT="$(cd "$(dirname "$SELF")/.." && pwd)"
 CLI="$ROOT/packages/cli"
+APP="$ROOT/packages/app"
 PRELOAD="$CLI/node_modules/@opentui/solid/scripts/preload.js"
 if [ ! -f "$PRELOAD" ]; then
   echo "okucode: dependencies missing. Run: (cd \"$ROOT\" && bun install)" >&2
   exit 1
 fi
+
+if [ "$1" = "web" ]; then
+  shift
+  PORT=4096
+  if [ "$1" = "--port" ] && [ -n "$2" ]; then PORT="$2"; shift 2; fi
+
+  # Build the web UI on first use, and again whenever its source changed.
+  if [ ! -f "$APP/dist/index.html" ] || [ -n "$(find "$APP/src" "$APP/index.html" "$ROOT/packages/ui/src" -newer "$APP/dist/index.html" -print 2>/dev/null | head -1)" ]; then
+    echo "okucode: building the web UI (first time or after an update, about 1 minute)..."
+    (cd "$APP" && bun run build >/dev/null) || { echo "okucode: web UI build failed. Run: cd \"$APP\" && bun run build" >&2; exit 1; }
+  fi
+
+  PASSWORD="${OKUCODE_PASSWORD:-${OPENCODE_PASSWORD:-}}"
+  if [ -z "$PASSWORD" ]; then PASSWORD="$(LC_ALL=C tr -dc 'a-z0-9' </dev/urandom | head -c 12)"; fi
+  URL="http://127.0.0.1:$PORT"
+  echo ""
+  echo "  OkuCode web UI + API (this laptop only)"
+  echo "  ---------------------------------------"
+  echo "  Open:      $URL"
+  echo "  Password:  $PASSWORD"
+  echo "  API docs:  $URL/openapi.json   (user: opencode, password above)"
+  echo "  Stop:      press Ctrl+C"
+  echo ""
+  if command -v open >/dev/null 2>&1; then (sleep 3 && open "$URL") >/dev/null 2>&1 &
+  elif command -v xdg-open >/dev/null 2>&1; then (sleep 3 && xdg-open "$URL") >/dev/null 2>&1 &
+  fi
+  OPENCODE_PASSWORD="$PASSWORD" exec bun --preload "$PRELOAD" "$CLI/src/index.ts" serve --hostname 127.0.0.1 --port "$PORT" "$@"
+fi
+
 exec bun --preload "$PRELOAD" "$CLI/src/index.ts" "$@"
