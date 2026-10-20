@@ -27,6 +27,7 @@ import { toSessionError } from "../to-session-error.js"
 import { SessionUsage } from "../usage.js"
 import { SessionRunnerModel } from "./model.js"
 import { createLLMEventPublisher } from "./publish-llm-event.js"
+import { TextToolCalls } from "../../okutobus/text-tool-calls.js"
 import { SessionRunnerRetry } from "./retry.js"
 
 export type Outcome = Data.TaggedEnum<{
@@ -104,7 +105,11 @@ export const make = Effect.gen(function* () {
     // A local execution starts only after its Tool.Called publication completes.
     let overflowFailure: ProviderErrorEvent | undefined
     // Read to the end, not just the finish event, so the next request can reuse this response.
-    const providerStream = llm.stream(input.prepared.request, input.prepared.options).pipe(
+    // Okutobus FR-48: turn text-only tool calls from small open models into real tool calls.
+    const providerStream = TextToolCalls.apply(
+      llm.stream(input.prepared.request, input.prepared.options),
+      TextToolCalls.offeredTools(input.prepared.request.tools),
+    ).pipe(
       Stream.runForEach((event) =>
         Effect.gen(function* () {
           if (overflowFailure || publisher.hasProviderError()) return
