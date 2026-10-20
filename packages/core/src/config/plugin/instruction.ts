@@ -13,6 +13,9 @@ import { InstructionDiscovery } from "../../instruction-discovery.js"
 import { Instructions } from "../../instructions/index.js"
 import { Location } from "../../location.js"
 
+// Okutobus: OKUCODE.md is the OkuCode project instruction file; AGENTS.md stays supported.
+const INSTRUCTION_FILES = ["OKUCODE.md", "AGENTS.md"]
+
 type Loaded =
   | { readonly type: "available"; readonly files: InstructionDiscovery.File[] }
   | { readonly type: "unavailable" }
@@ -52,7 +55,7 @@ export const Plugin = define({
         ...(discovery.global ? [globalFile] : []),
         ...(project
           ? ancestorDirectories(start, stop)
-              .map((directory) => join(directory, "AGENTS.md"))
+              .flatMap((directory) => INSTRUCTION_FILES.map((name) => join(directory, name)))
               .filter((file) => discovery.global || file !== globalFile)
           : []),
       ]
@@ -84,7 +87,7 @@ export const Plugin = define({
       const projectSource = Effect.fn("ConfigInstructionPlugin.projectSource")(function* () {
         if (!project) return []
         const walked = yield* Effect.forEach(
-          yield* fs.up({ targets: ["AGENTS.md"], start, stop, type: "file" }),
+          yield* fs.up({ targets: INSTRUCTION_FILES, start, stop, type: "file" }),
           fs.resolve,
         )
         const discovered = new Set(walked.filter((file) => discovery.global || file !== globalFile))

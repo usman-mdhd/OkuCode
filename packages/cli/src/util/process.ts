@@ -7,7 +7,19 @@ export function selfCommand() {
   if (runtime !== "bun" && runtime !== "node" && runtime !== "nodejs") return [process.execPath]
   if (!entrypoint) throw new Error("Failed to resolve CLI entrypoint")
   if (runtime === "node" || runtime === "nodejs") return [process.execPath, ...nodeFlags(), entrypoint]
-  return [process.execPath, entrypoint]
+  return [process.execPath, ...sourcePreload(), entrypoint]
+}
+
+// Okutobus: when running from TypeScript source (dev), child processes such as the background
+// server start in another directory and miss packages/cli/bunfig.toml. Pass the Solid JSX
+// preload explicitly so they load .tsx modules the same way as the parent process.
+function sourcePreload(): string[] {
+  if (!entrypoint || !/\.(ts|tsx)$/.test(entrypoint)) return []
+  try {
+    return ["--preload", Bun.resolveSync("@opentui/solid/preload", path.dirname(entrypoint))]
+  } catch {
+    return []
+  }
 }
 
 function nodeFlags() {

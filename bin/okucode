@@ -1,0 +1,17 @@
+#!/bin/sh
+# OkuCode (Okutobus Technologies) — run the CLI from this source checkout.
+# Usage: add this folder's bin/ to PATH, then run `okucode` from any project directory.
+set -e
+SELF="$0"
+while [ -L "$SELF" ]; do
+  LINK="$(readlink "$SELF")"
+  case "$LINK" in /*) SELF="$LINK" ;; *) SELF="$(dirname "$SELF")/$LINK" ;; esac
+done
+ROOT="$(cd "$(dirname "$SELF")/.." && pwd)"
+CLI="$ROOT/packages/cli"
+PRELOAD="$CLI/node_modules/@opentui/solid/scripts/preload.js"
+if [ ! -f "$PRELOAD" ]; then
+  echo "okucode: dependencies missing. Run: (cd \"$ROOT\" && bun install)" >&2
+  exit 1
+fi
+exec bun --preload "$PRELOAD" "$CLI/src/index.ts" "$@"

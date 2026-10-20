@@ -226,10 +226,15 @@ describe("ConfigInstructionPlugin.Plugin", () => {
           const watcher = yield* Watcher.Test
           expect(yield* watcher.subscriptions()).toEqual([
             { path: globalFile, type: "file" },
+            { path: path.join(directory, "OKUCODE.md"), type: "file" },
             { path: packageFile, type: "file" },
+            { path: path.join(project, "packages", "OKUCODE.md"), type: "file" },
             { path: path.join(project, "packages", "AGENTS.md"), type: "file" },
+            { path: path.join(project, "OKUCODE.md"), type: "file" },
             { path: projectFile, type: "file" },
+            { path: path.join(shared, "OKUCODE.md"), type: "file" },
             { path: sharedFile, type: "file" },
+            { path: path.join(home, "OKUCODE.md"), type: "file" },
             { path: path.join(home, "AGENTS.md"), type: "file" },
           ])
           expect(yield* watcher.subscriptions()).not.toContainEqual({
@@ -505,8 +510,11 @@ describe("ConfigInstructionPlugin.Plugin", () => {
           const watcher = yield* Watcher.Test
           expect(yield* watcher.subscriptions()).toEqual([
             { path: path.join(global, "AGENTS.md"), type: "file" },
+            { path: path.join(directory, "OKUCODE.md"), type: "file" },
             { path: path.join(directory, "AGENTS.md"), type: "file" },
+            { path: path.join(project, "packages", "OKUCODE.md"), type: "file" },
             { path: path.join(project, "packages", "AGENTS.md"), type: "file" },
+            { path: path.join(project, "OKUCODE.md"), type: "file" },
             { path: path.join(project, "AGENTS.md"), type: "file" },
           ])
         }).pipe(
@@ -732,7 +740,7 @@ describe("ConfigInstructionPlugin.Plugin", () => {
       )
 
       const repo = path.resolve("/repo")
-      expect(observed.values).toEqual([{ targets: ["AGENTS.md"], start: repo, stop: repo, type: "file" }])
+      expect(observed.values).toEqual([{ targets: ["OKUCODE.md", "AGENTS.md"], start: repo, stop: repo, type: "file" }])
     }),
   )
 })
