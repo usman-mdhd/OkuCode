@@ -3,6 +3,7 @@ import { checksum } from "@opencode/util/encode"
 import {
   type ComponentProps,
   createEffect,
+  createMemo,
   createResource,
   createSignal,
   createUniqueId,
@@ -15,6 +16,7 @@ import { Icon } from "@opencode/ui/icon"
 import { IconButton } from "@opencode/ui/icon-button"
 import { Tooltip } from "@opencode/ui/tooltip"
 import { canReusePendingBlock, completedProjection } from "./markdown-projection"
+import { unfenceTables } from "./markdown-unfence-tables"
 import type { Block, Projection } from "./markdown-stream"
 import {
   disposeMarkdownProjection,
@@ -568,6 +570,8 @@ export function Markdown(
   },
 ) {
   const [local, others] = splitProps(props, ["text", "cacheKey", "streaming", "deferUntilReady", "class", "classList"])
+  // Okutobus: show tables that small models wrap in a plain code block as real tables.
+  const shownText = createMemo(() => unfenceTables(local.text))
   const i18n = useI18n()
   const markdown = useMarkdown()
   const previewImages = createImagePreview()
@@ -587,27 +591,27 @@ export function Markdown(
 
       if (!live && !streamed) return
 
-      return { key: owner, text: local.text, live }
+      return { key: owner, text: shownText(), live }
     },
     (src) => projectMarkdown(src.key, src.text, src.live),
     { initialValue: pendingProjection("") },
   )
 
   const currentProjection = () => {
-    if (!(local.streaming ?? false) && !streamed) return completedProjection(local.text)
+    if (!(local.streaming ?? false) && !streamed) return completedProjection(shownText())
     const value = projection.latest
 
-    if (value?.text === local.text) return value
+    if (value?.text === shownText()) return value
 
     if (value?.text) return value
 
-    return pendingProjection(local.text)
+    return pendingProjection(shownText())
   }
 
   const initial = initialResult(
-    local.text,
+    shownText(),
     local.cacheKey,
-    local.streaming ? pendingProjection(local.text) : completedProjection(local.text),
+    local.streaming ? pendingProjection(shownText()) : completedProjection(shownText()),
     owner,
     local.deferUntilReady,
   )
@@ -616,16 +620,16 @@ export function Markdown(
     () => {
       if (isServer)
         return {
-          text: local.text,
+          text: shownText(),
           key: local.cacheKey,
-          projection: pendingProjection(local.text),
+          projection: pendingProjection(shownText()),
         }
-      const value = !(local.streaming ?? false) && !streamed ? completedProjection(local.text) : projection.latest
+      const value = !(local.streaming ?? false) && !streamed ? completedProjection(shownText()) : projection.latest
 
-      if (!value || value.text !== local.text) return
+      if (!value || value.text !== shownText()) return
 
       return {
-        text: local.text,
+        text: shownText(),
         key: local.cacheKey,
         projection: value,
       }
@@ -720,7 +724,7 @@ export function Markdown(
     const container = root()
     const result = html.latest ?? html()
     const projected = currentProjection()
-    const content = local.text ? pendingBlocks(result, projected, local.cacheKey, owner, local.deferUntilReady) : []
+    const content = shownText() ? pendingBlocks(result, projected, local.cacheKey, owner, local.deferUntilReady) : []
 
     if (!container) return
 
@@ -740,7 +744,7 @@ export function Markdown(
       container.innerHTML = ""
       images?.update(container)
 
-      if (result?.ready && result.text === local.text) container.dataset.markdownReady = ""
+      if (result?.ready && result.text === shownText()) container.dataset.markdownReady = ""
 
       return
     }
@@ -791,7 +795,7 @@ export function Markdown(
     if (!faviconCleanup) faviconCleanup = setupExternalLinkFavicons(container)
     container.toggleAttribute("data-local-links", !!markdown?.openLocalFile)
 
-    if (result?.ready && result.text === local.text) container.dataset.markdownReady = ""
+    if (result?.ready && result.text === shownText()) container.dataset.markdownReady = ""
   })
 
   onCleanup(() => {
