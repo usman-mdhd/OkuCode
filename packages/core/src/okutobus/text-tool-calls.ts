@@ -95,11 +95,16 @@ export function make(tools: ReadonlySet<string>) {
       const calls = callEvents(state.text)
       if (calls.length === 0 && !native) {
         const command = describedCommand(state.text, tools)
-        if (command !== undefined) {
+        const file = command === undefined ? describedRead(state.text, tools) : undefined
+        const call =
+          command !== undefined
+            ? { name: "shell", input: { command } }
+            : file !== undefined
+              ? { name: "read", input: { path: file } }
+              : undefined
+        if (call) {
           converted++
-          calls.push(
-            LLMEvent.toolCall({ id: `call_okc_${Date.now().toString(36)}_${converted}`, name: "shell", input: { command } }),
-          )
+          calls.push(LLMEvent.toolCall({ id: `call_okc_${Date.now().toString(36)}_${converted}`, ...call }))
         }
       }
       const held = state.text.slice(state.sent)
@@ -221,6 +226,7 @@ const RUN_INTENT = [
 export function describedCommand(text: string, tools: ReadonlySet<string>): string | undefined {
   if (!tools.has("shell")) return undefined
   const blocks = [...text.matchAll(/```([^\n`]*)\n([\s\S]*?)```/g)]
+  if (blocks.length === 0) return inlineCommand(text, tools)
   if (blocks.length !== 1) return undefined
   const [whole, info, body] = blocks[0] as unknown as [string, string, string]
   if (!SHELL_LANGUAGES.has(info.trim().toLowerCase())) return undefined
@@ -231,6 +237,39 @@ export function describedCommand(text: string, tools: ReadonlySet<string>): stri
   const command = lines[0].replace(/^\$\s+/, "")
   if (!command || /<[^>]+>/.test(command)) return undefined
   return command
+}
+
+// First words of commands that may be run when they are only written inline (`python3 -m unittest`).
+const INLINE_COMMANDS = new Set([
+  "python", "python3", "pytest", "pip", "pip3", "ls", "cat", "pwd", "git", "npm", "npx", "node", "bun", "yarn",
+  "pnpm", "go", "cargo", "make", "dotnet", "mvn", "gradle", "java", "javac", "tsc", "deno", "ruby", "php",
+])
+
+/** "I'll execute `python3 -m unittest` using the `shell` tool" with no code block: the one inline command. */
+function inlineCommand(text: string, tools: ReadonlySet<string>): string | undefined {
+  if (!RUN_INTENT.some((pattern) => pattern.test(text))) return undefined
+  const spans = [...text.matchAll(/`([^`\n]+)`/g)]
+    .map((match) => (match[1] ?? "").trim().replace(/^\$\s+/, ""))
+    .filter((span) => span && !tools.has(span))
+  const commands = [...new Set(spans.filter((span) => INLINE_COMMANDS.has(span.split(/\s+/)[0] ?? "")))]
+  if (commands.length !== 1) return undefined
+  const command = commands[0]
+  if (!command || /<[^>]+>/.test(command)) return undefined
+  return command
+}
+
+const READ_INTENT = [
+  /\b(?:use|using)\b[^.\n]{0,30}\b`?read`?\s+tool\b/i,
+  /\b(?:i will|i'll|let me|i am going to|i'm going to)\s+(?:first\s+)?(?:read|open)\b/i,
+]
+
+/** "I'll start by using the read tool ... calculator.py" with no call: the one file it named. */
+export function describedRead(text: string, tools: ReadonlySet<string>): string | undefined {
+  if (!tools.has("read")) return undefined
+  if (!READ_INTENT.some((pattern) => pattern.test(text))) return undefined
+  const files = [...new Set([...text.matchAll(/(?<![\w/.-])((?:[\w.-]+\/)*[\w-]+\.[A-Za-z][A-Za-z0-9]{0,4})(?![\w/-])/g)].map((m) => m[1]))]
+  if (files.length !== 1) return undefined
+  return files[0]
 }
 
 const TEXT_KEYS = ["content", "text", "markdown", "answer", "response", "message", "output", "body", "result", "question"]

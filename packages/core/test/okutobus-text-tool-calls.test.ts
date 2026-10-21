@@ -154,4 +154,29 @@ describe("Okutobus TextToolCalls (FR-48)", () => {
     expect(calls(example)).toEqual([])
     expect(text(example)).toBe('Example config:\n{"port": 8080}')
   })
+
+  test("runs an inline command the model announced with no code block", async () => {
+    const out = await run([
+      ...textEvents("t1", [
+        "To run the tests with `python3 -m unittest` and identify which tests fail, I'll execute that command using the `shell` tool.\n\nPlease wait as the tests run...",
+      ]),
+      finish(),
+    ])
+    expect(calls(out)).toEqual([{ name: "shell", input: { command: "python3 -m unittest" } }])
+    expect(TextToolCalls.describedCommand("You can run `python3 -m unittest` to test it.", tools)).toBeUndefined()
+    expect(TextToolCalls.describedCommand("I will run a command: `rm -rf build`", tools)).toBeUndefined()
+    expect(TextToolCalls.describedCommand("I'll run the command `ls` and then `pwd`", tools)).toBeUndefined()
+  })
+
+  test("reads the one file the model said it would read", async () => {
+    const out = await run([
+      ...textEvents("t1", [
+        "To read and explain each function in calculator.py, I'll start by using the read tool to fetch the file content.\n\nPlease wait as I read the file...",
+      ]),
+      finish(),
+    ])
+    expect(calls(out)).toEqual([{ name: "read", input: { path: "calculator.py" } }])
+    expect(TextToolCalls.describedRead("I will read a.py and b.py", tools)).toBeUndefined()
+    expect(TextToolCalls.describedRead("calculator.py has three functions.", tools)).toBeUndefined()
+  })
 })
