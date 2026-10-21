@@ -25,10 +25,13 @@ import { LLMEvent } from "@opencode/ai"
 import { Stream } from "effect"
 
 type Event = LLMEvent
-type TextState = { start?: Event; text: string; mode: "undecided" | "buffer" | "pass" }
+type TextState = { start?: Event; text: string; sent: number; mode: "undecided" | "buffer" | "pass" }
 export type ParsedCall = { readonly name: string; readonly input: Record<string, unknown> }
 
 const MAYBE_CALL = ["{", "[", "<tool_call", "<function", "```"]
+// Inside normal text, a line that starts like this may be a call written as text: hold it back
+// (so raw JSON is not shown) until the text part ends.
+const LINE_CALL = ["{", "[{", "<tool_call", "<function", "```json"]
 
 /** Names of the top-level tools offered to the model in this request. */
 export function offeredTools(tools: ReadonlyArray<{ readonly type: string; readonly name: string }> | undefined) {
@@ -68,9 +71,20 @@ export function make(tools: ReadonlySet<string>) {
   const textEvents = (id: string, state: TextState): Event[] => {
     const out: Event[] = []
     if (state.start) out.push(state.start)
-    if (state.text) out.push(LLMEvent.textDelta({ id, text: state.text }))
+    const rest = state.text.slice(state.sent)
+    if (rest) out.push(LLMEvent.textDelta({ id, text: rest }))
     state.start = undefined
+    state.sent = state.text.length
     return out
+  }
+
+  // Sends the text up to the first line that may be a call written as text.
+  const safeEvents = (id: string, state: TextState): Event[] => {
+    const safe = holdFrom(state.text, state.sent)
+    if (safe <= state.sent) return []
+    const text = state.text.slice(state.sent, safe)
+    state.sent = safe
+    return [LLMEvent.textDelta({ id, text })]
   }
 
   const finishText = (id: string, end?: Event): Event[] => {
@@ -88,7 +102,10 @@ export function make(tools: ReadonlySet<string>) {
           )
         }
       }
-      return [...(end ? [end] : []), ...calls]
+      const held = state.text.slice(state.sent)
+      const tail = calls.length > 0 && !native ? withoutCalls(held) : held
+      const out: Event[] = tail.trim() || (tail && calls.length === 0) ? [LLMEvent.textDelta({ id, text: tail })] : []
+      return [...out, ...(end ? [end] : []), ...calls]
     }
     // Held back because it looked like a call from the start: replace it with the call if it parses.
     const calls = callEvents(state.text)
@@ -113,18 +130,18 @@ export function make(tools: ReadonlySet<string>) {
             out.push(...textEvents(id, state))
             state.mode = "pass"
           }
-          if (!texts.has(event.id)) texts.set(event.id, { text: "", mode: "pass" })
+          if (!texts.has(event.id)) texts.set(event.id, { text: "", sent: 0, mode: "pass" })
           out.push(event)
           return out
         }
-        texts.set(event.id, { start: event, text: "", mode: "undecided" })
+        texts.set(event.id, { start: event, text: "", sent: 0, mode: "undecided" })
         return []
       }
       case "text-delta": {
         const state = texts.get(event.id)
         if (!state) return [event]
         state.text += event.text
-        if (state.mode === "pass") return [event]
+        if (state.mode === "pass") return safeEvents(event.id, state)
         if (state.mode === "buffer") return []
         const head = state.text.trimStart()
         if (head.length === 0) return []
@@ -135,7 +152,9 @@ export function make(tools: ReadonlySet<string>) {
         }
         if (MAYBE_CALL.some((prefix) => prefix.startsWith(head))) return []
         state.mode = "pass"
-        return textEvents(event.id, state)
+        const start = state.start ? [state.start] : []
+        state.start = undefined
+        return [...start, ...safeEvents(event.id, state)]
       }
       case "text-end":
         return finishText(event.id, event)
@@ -164,6 +183,29 @@ export function parse(text: string, tools: ReadonlySet<string>): ParsedCall[] {
     }
   }
   return calls
+}
+
+/** Index from which text should be held back: the first line (at or after `from`) that may be a call. */
+export function holdFrom(text: string, from: number): number {
+  let lineStart = text.lastIndexOf("\n", Math.max(0, from - 1)) + 1
+  while (lineStart <= text.length) {
+    const end = text.indexOf("\n", lineStart)
+    const line = text.slice(lineStart, end < 0 ? text.length : end).trimStart()
+    const complete = end >= 0
+    if (LINE_CALL.some((prefix) => line.startsWith(prefix))) return Math.max(from, lineStart)
+    // Last, unfinished line that could still turn into a call: wait for more text.
+    if (!complete && (line === "" || LINE_CALL.some((prefix) => prefix.startsWith(line)))) return Math.max(from, lineStart)
+    if (!complete) return text.length
+    lineStart = end + 1
+  }
+  return text.length
+}
+
+/** Removes the JSON calls (and their fences/tags) from held text, keeping any other words. */
+function withoutCalls(text: string): string {
+  let out = text
+  for (const blob of jsonValues(text)) out = out.replace(blob, "")
+  return out.replace(/```json|```|<\/?tool_call>|<\/?function[^>]*>/g, "").replace(/\n{3,}/g, "\n\n")
 }
 
 const SHELL_LANGUAGES = new Set(["", "sh", "bash", "shell", "zsh", "console", "terminal"])

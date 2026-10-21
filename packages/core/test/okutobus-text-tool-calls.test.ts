@@ -132,4 +132,26 @@ describe("Okutobus TextToolCalls (FR-48)", () => {
       "python3 -m unittest",
     )
   })
+
+  test("hides a JSON call that follows explanatory text, and runs it", async () => {
+    const out = await run([
+      ...textEvents("t1", [
+        "To read the file, I will use the read tool.\n",
+        '{"name": "read", ',
+        '"arguments": {"path": "a.py"}}',
+      ]),
+      finish(),
+    ])
+    expect(calls(out)).toEqual([{ name: "read", input: { path: "a.py" } }])
+    expect(text(out)).toBe("To read the file, I will use the read tool.\n")
+  })
+
+  test("still streams normal text and code blocks, and keeps JSON that is not a call", async () => {
+    const streamed = await run([...textEvents("t1", ["Line one\n", "```python\nprint(1)\n```\n", "Done"]), finish()])
+    expect(text(streamed)).toBe("Line one\n```python\nprint(1)\n```\nDone")
+    expect(streamed.filter((event) => event.type === "text-delta").length).toBeGreaterThan(1)
+    const example = await run([...textEvents("t1", ["Example config:\n", '{"port": 8080}']), finish()])
+    expect(calls(example)).toEqual([])
+    expect(text(example)).toBe('Example config:\n{"port": 8080}')
+  })
 })
