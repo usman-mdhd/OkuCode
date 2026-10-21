@@ -9,6 +9,7 @@ import { createHomeScrollController } from "./scroll"
 import { createHomeSessionSearchController } from "./sessions/search"
 import { createHomeSessionsController } from "./sessions/controller"
 import { HomeSessions } from "./sessions/region"
+import { HomeHero } from "./hero"
 
 export function Home() {
   const mobile = createMediaQuery("(max-width: 767px)")
@@ -39,6 +40,10 @@ export function Home() {
         onScroll={(event) => scroll.viewport.update(event.currentTarget.scrollTop)}
         onWheel={scroll.viewport.containOuterWheel}
       >
+        {/* Okutobus: greeting + message box first; projects and past chats below. */}
+        <div class="px-3 lg:px-6">
+          <HomeHero home={home} />
+        </div>
         <div
           class={`
             mx-auto grid min-h-full w-full max-w-[1080px] grid-rows-[auto_minmax(0,1fr)] gap-4 px-3

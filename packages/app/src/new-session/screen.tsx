@@ -1,4 +1,5 @@
 import { createPromptProjectController } from "@/new-session/project/selector"
+import { autoSend } from "./auto-send"
 import { useSettingsSurface } from "@/settings/surface"
 import { useTabs, type DraftTab } from "@/shell/tabs/tabs"
 import { useSettingsServers } from "@/settings/servers/inventory"
@@ -91,6 +92,23 @@ export default function NewSessionPage(props: { draftId: string }) {
       if (!text) return
       composer.adapter.state.set([{ type: "text", content: text, start: 0, end: text.length }], text.length)
       setSearch({ ...search, prompt: undefined })
+    })
+  })
+  // Okutobus: the home screen opens the draft with send=1 so the first message goes out by itself.
+  createEffect(() => {
+    const draftID = search.draftId
+    if (!composer.ready() || !draftID || !autoSend.has(draftID)) return
+    if (model.view.submit.available?.() === false) return
+    untrack(() => {
+      autoSend.done(draftID)
+      // Wait for the editor to show the prompt, then send; retry briefly while the draft is still open.
+      let tries = 0
+      const attempt = () => {
+        if (search.draftId !== draftID || tries++ > 10) return
+        model.submit()
+        setTimeout(attempt, 500)
+      }
+      setTimeout(attempt, 300)
     })
   })
   const ready = Promise.resolve()
