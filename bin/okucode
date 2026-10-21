@@ -31,6 +31,20 @@ if [ "$1" = "web" ]; then
     (cd "$APP" && bun run build >/dev/null) || { echo "okucode: web UI build failed. Run: cd \"$APP\" && bun run build" >&2; exit 1; }
   fi
 
+  # If an older `okucode web` is still running on this port (e.g. in another terminal tab), stop it.
+  if command -v lsof >/dev/null 2>&1; then
+    for OLD in $(lsof -ti "tcp:$PORT" -sTCP:LISTEN 2>/dev/null); do
+      if ps -o command= -p "$OLD" 2>/dev/null | grep -q "src/index.ts serve"; then
+        echo "okucode: stopping the old OkuCode web that was still running on port $PORT..."
+        kill "$OLD" 2>/dev/null || true
+      else
+        echo "okucode: port $PORT is used by another program. Try: okucode web --port $((PORT + 1))" >&2
+        exit 1
+      fi
+    done
+    sleep 1
+  fi
+
   PASSWORD="${OKUCODE_PASSWORD:-${OPENCODE_PASSWORD:-}}"
   if [ -z "$PASSWORD" ]; then PASSWORD="$(LC_ALL=C tr -dc 'a-z0-9' </dev/urandom | head -c 12)"; fi
   URL="http://127.0.0.1:$PORT"
