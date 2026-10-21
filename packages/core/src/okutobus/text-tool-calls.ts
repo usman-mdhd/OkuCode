@@ -10,6 +10,11 @@ export * as TextToolCalls from "./text-tool-calls.js"
 // The agent loop then shows the JSON and never runs the tool. This transform sits on the model
 // event stream of every provider and turns such text into real tool calls — only when the model
 // made no native tool call in that step and the text names a tool that was actually offered.
+//
+// Small models also invent tools that do not exist to "deliver" a normal answer, for example
+//   {"name": "markdown", "arguments": {"content": "| Feature | React | Angular |\n..."}}
+//   {"name": "ask", "arguments": {"questions": [{"question": "LLM stands for ..."}]}}
+// When the whole reply is one such call, its text is shown as the normal (formatted) answer.
 
 import { LLMEvent } from "@opencode/ai"
 import { Stream } from "effect"
@@ -29,7 +34,7 @@ export function offeredTools(tools: ReadonlyArray<{ readonly type: string; reado
 
 /** Applies the transform to a model event stream. */
 export function apply<E, R>(stream: Stream.Stream<Event, E, R>, tools: ReadonlySet<string>): Stream.Stream<Event, E, R> {
-  if (tools.size === 0) return stream
+  // Runs even when no tools are offered (e.g. the chat agent), so made-up calls still get unwrapped.
   const state = make(tools)
   return Stream.concat(
     stream.pipe(Stream.flatMap((event) => Stream.fromIterable(state.handle(event)))),
@@ -71,6 +76,8 @@ export function make(tools: ReadonlySet<string>) {
     // Held back because it looked like a call from the start: replace it with the call if it parses.
     const calls = callEvents(state.text)
     if (calls.length > 0) return calls
+    const answer = native ? undefined : unwrap(state.text, tools)
+    if (answer !== undefined) state.text = answer
     return [...textEvents(id, state), end ?? LLMEvent.textEnd({ id })]
   }
 
@@ -80,9 +87,22 @@ export function make(tools: ReadonlySet<string>) {
       case "tool-input-start":
         native = true
         return [event]
-      case "text-start":
+      case "text-start": {
+        // Overlapping or repeated text parts: stop holding anything back and pass them on as they are,
+        // so the session runner still sees (and rejects) a malformed stream.
+        if (texts.size > 0) {
+          const out: Event[] = []
+          for (const [id, state] of texts) {
+            out.push(...textEvents(id, state))
+            state.mode = "pass"
+          }
+          if (!texts.has(event.id)) texts.set(event.id, { text: "", mode: "pass" })
+          out.push(event)
+          return out
+        }
         texts.set(event.id, { start: event, text: "", mode: "undecided" })
         return []
+      }
       case "text-delta": {
         const state = texts.get(event.id)
         if (!state) return [event]
@@ -127,6 +147,49 @@ export function parse(text: string, tools: ReadonlySet<string>): ParsedCall[] {
     }
   }
   return calls
+}
+
+const TEXT_KEYS = ["content", "text", "markdown", "answer", "response", "message", "output", "body", "result", "question"]
+
+/**
+ * If the whole text is a single call to a tool that was NOT offered, returns the answer text inside
+ * its arguments (so it renders as normal Markdown). Returns undefined when nothing readable is inside.
+ */
+export function unwrap(text: string, tools: ReadonlySet<string>): string | undefined {
+  const blobs = [...jsonValues(text)]
+  if (blobs.length !== 1) return undefined
+  const rest = text
+    .replace(blobs[0], "")
+    .replace(/```[a-zA-Z]*|<\/?tool_call>|<\/?function[^>]*>/g, "")
+    .trim()
+  if (rest) return undefined
+  const value = parseJson(blobs[0])
+  if (!isRecord(value)) return undefined
+  const fn = isRecord(value.function) ? value.function : value
+  const name = typeof fn.name === "string" ? fn.name : typeof fn.tool === "string" ? fn.tool : undefined
+  if (!name || tools.has(name)) return undefined
+  const raw = fn.arguments ?? fn.parameters ?? fn.args ?? fn.input
+  const args = typeof raw === "string" ? (parseJson(raw) ?? raw) : raw
+  const found = collectText(args, 0)
+  return found.length > 0 ? found.join("\n\n") : undefined
+}
+
+function collectText(value: unknown, depth: number): string[] {
+  if (depth > 4) return []
+  if (typeof value === "string") return value.trim() ? [value] : []
+  if (Array.isArray(value)) return value.flatMap((item) => collectText(item, depth + 1))
+  if (!isRecord(value)) return []
+  for (const key of TEXT_KEYS) {
+    const field = value[key]
+    if (typeof field === "string" && field.trim()) return [field]
+  }
+  for (const key of TEXT_KEYS) {
+    const found = collectText(value[key], depth + 1)
+    if (found.length > 0) return found
+  }
+  return Object.values(value)
+    .filter((field) => typeof field === "object")
+    .flatMap((field) => collectText(field, depth + 1))
 }
 
 function toCall(item: unknown, tools: ReadonlySet<string>): ParsedCall | undefined {

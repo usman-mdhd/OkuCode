@@ -86,4 +86,27 @@ describe("Okutobus TextToolCalls (FR-48)", () => {
     const out = await run([LLMEvent.textStart({ id: "t1" }), LLMEvent.textDelta({ id: "t1", text: '{"half": ' })])
     expect(text(out)).toBe('{"half": ')
   })
+
+  test("shows the answer inside a made-up tool call as normal text", async () => {
+    const markdown = await run([
+      ...textEvents("t1", ['{ "name": "markdown", "arguments": { "content": "| A | B |\\n|---|---|\\n| 1 | 2 |" } }']),
+      finish(),
+    ])
+    expect(calls(markdown)).toEqual([])
+    expect(text(markdown)).toBe("| A | B |\n|---|---|\n| 1 | 2 |")
+    const ask = await run([
+      ...textEvents("t1", [
+        '{"name": "ask", "arguments": {"questions": [{"header": "LLM", "question": "LLM stands for Large Language Model."}]}}',
+      ]),
+      finish(),
+    ])
+    expect(text(ask)).toBe("LLM stands for Large Language Model.")
+    const fenced = await run([...textEvents("t1", ['```json\n{"name": "reply", "arguments": {"text": "Hi"}}\n```']), finish()])
+    expect(text(fenced)).toBe("Hi")
+  })
+
+  test("keeps JSON with extra text, or a real offered tool, untouched by unwrapping", async () => {
+    expect(TextToolCalls.unwrap('{"name": "markdown", "arguments": {"content": "x"}} and more', tools)).toBeUndefined()
+    expect(TextToolCalls.unwrap('{"name": "read", "arguments": {"path": "x"}}', tools)).toBeUndefined()
+  })
 })
