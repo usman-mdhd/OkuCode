@@ -15,6 +15,11 @@ export * as TextToolCalls from "./text-tool-calls.js"
 //   {"name": "markdown", "arguments": {"content": "| Feature | React | Angular |\n..."}}
 //   {"name": "ask", "arguments": {"questions": [{"question": "LLM stands for ..."}]}}
 // When the whole reply is one such call, its text is shown as the normal (formatted) answer.
+//
+// They also describe a command instead of running it:
+//   "To list the files I will use the `shell` tool to run this command:  ```ls -la```"
+// When the text clearly says it will run a command and shows exactly one one-line shell block,
+// that command is run through the real shell tool (normal permission rules still apply).
 
 import { LLMEvent } from "@opencode/ai"
 import { Stream } from "effect"
@@ -72,7 +77,19 @@ export function make(tools: ReadonlySet<string>) {
     const state = texts.get(id)
     texts.delete(id)
     if (!state) return end ? [end] : []
-    if (state.mode === "pass") return [...(end ? [end] : []), ...callEvents(state.text)]
+    if (state.mode === "pass") {
+      const calls = callEvents(state.text)
+      if (calls.length === 0 && !native) {
+        const command = describedCommand(state.text, tools)
+        if (command !== undefined) {
+          converted++
+          calls.push(
+            LLMEvent.toolCall({ id: `call_okc_${Date.now().toString(36)}_${converted}`, name: "shell", input: { command } }),
+          )
+        }
+      }
+      return [...(end ? [end] : []), ...calls]
+    }
     // Held back because it looked like a call from the start: replace it with the call if it parses.
     const calls = callEvents(state.text)
     if (calls.length > 0) return calls
@@ -147,6 +164,31 @@ export function parse(text: string, tools: ReadonlySet<string>): ParsedCall[] {
     }
   }
   return calls
+}
+
+const SHELL_LANGUAGES = new Set(["", "sh", "bash", "shell", "zsh", "console", "terminal"])
+const RUN_INTENT = [
+  /\b(?:i will|i'll|let me|i am going to|i'm going to|i can)\b[^.\n]{0,80}\b(?:use|run|execute)\b[^.\n]{0,60}\b(?:shell|bash|terminal|command)\b/i,
+  /\busing the `?(?:shell|bash)`? tool\b/i,
+]
+
+/**
+ * A single one-line command the model said it would run but only showed in a code block.
+ * Returns undefined unless the intent is explicit and there is exactly one such block.
+ */
+export function describedCommand(text: string, tools: ReadonlySet<string>): string | undefined {
+  if (!tools.has("shell")) return undefined
+  const blocks = [...text.matchAll(/```([^\n`]*)\n([\s\S]*?)```/g)]
+  if (blocks.length !== 1) return undefined
+  const [whole, info, body] = blocks[0] as unknown as [string, string, string]
+  if (!SHELL_LANGUAGES.has(info.trim().toLowerCase())) return undefined
+  const prose = text.replace(whole, " ")
+  if (!RUN_INTENT.some((pattern) => pattern.test(prose))) return undefined
+  const lines = body.split("\n").map((line) => line.trim()).filter(Boolean)
+  if (lines.length !== 1) return undefined
+  const command = lines[0].replace(/^\$\s+/, "")
+  if (!command || /<[^>]+>/.test(command)) return undefined
+  return command
 }
 
 const TEXT_KEYS = ["content", "text", "markdown", "answer", "response", "message", "output", "body", "result", "question"]

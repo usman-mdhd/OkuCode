@@ -109,4 +109,27 @@ describe("Okutobus TextToolCalls (FR-48)", () => {
     expect(TextToolCalls.unwrap('{"name": "markdown", "arguments": {"content": "x"}} and more', tools)).toBeUndefined()
     expect(TextToolCalls.unwrap('{"name": "read", "arguments": {"path": "x"}}', tools)).toBeUndefined()
   })
+
+  test("runs a one-line command the model said it would run but only showed", async () => {
+    const out = await run([
+      ...textEvents("t1", [
+        "To list the files in this project, I will use the `shell` tool to run a command. Here is the command:\n\n```\nls -la\n```\n\nThe output will list all files.",
+      ]),
+      finish(),
+    ])
+    expect(calls(out)).toEqual([{ name: "shell", input: { command: "ls -la" } }])
+    expect(text(out)).toContain("I will use the `shell` tool")
+  })
+
+  test("does not run example commands without a clear intent, or with several blocks", () => {
+    expect(TextToolCalls.describedCommand("You can list files with:\n```bash\nls -la\n```", tools)).toBeUndefined()
+    expect(
+      TextToolCalls.describedCommand("I will run these commands:\n```\nls\n```\nand\n```\npwd\n```", tools),
+    ).toBeUndefined()
+    expect(TextToolCalls.describedCommand("I will run this command:\n```python\nprint(1)\n```", tools)).toBeUndefined()
+    expect(TextToolCalls.describedCommand("I will run this command:\n```\nrm <file>\n```", tools)).toBeUndefined()
+    expect(TextToolCalls.describedCommand("I will run this command:\n```sh\n$ python3 -m unittest\n```", tools)).toBe(
+      "python3 -m unittest",
+    )
+  })
 })
