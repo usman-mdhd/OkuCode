@@ -1,3 +1,4 @@
+import { getDirectory, getFilename } from "@opencode/util/path"
 import { DataProvider } from "@opencode/session-ui/context"
 import { MarkdownProvider, type ReadMarkdownImage } from "@opencode/session-ui/context/markdown"
 import { useNavigate, useParams } from "@solidjs/router"
@@ -33,6 +34,23 @@ export function SessionUIProvider(
 
     return (path, signal) => readLocalImage(serverSDK.api, dir, path, signal)
   })
+
+  // Okutobus: download a file the agent created, through the authenticated server API.
+  const downloadFile = async (path: string) => {
+    const absolute = /^[a-z]:[\\/]/i.test(path) || path.startsWith("/")
+    const bytes = await serverSDK.api.file.read({
+      path: absolute ? getFilename(path) : path,
+      location: { directory: absolute ? getDirectory(path) : directory() },
+    })
+    const url = URL.createObjectURL(new Blob([new Uint8Array(bytes)]))
+    const link = document.createElement("a")
+    link.href = url
+    link.download = getFilename(path) || "document"
+    document.body.append(link)
+    link.click()
+    link.remove()
+    setTimeout(() => URL.revokeObjectURL(url), 30_000)
+  }
 
   const href = (sessionID: string) => sessionHref(props.server, sessionID)
 
@@ -113,7 +131,7 @@ export function SessionUIProvider(
       onNavigateToSession={navigateToSession}
       onSessionHref={href}
     >
-      <MarkdownProvider readImage={readImage()} openSession={openReferencedSession}>
+      <MarkdownProvider readImage={readImage()} downloadFile={downloadFile} openSession={openReferencedSession}>
         <LocalProvider>{props.children}</LocalProvider>
       </MarkdownProvider>
     </DataProvider>

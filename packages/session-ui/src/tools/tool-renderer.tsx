@@ -1571,6 +1571,53 @@ function ReadImage(props: { path: string; onContentRendered?: () => void }) {
   )
 }
 
+// Okutobus: a created document shows as a file card with a Download button.
+ToolRegistry.register({
+  name: "document",
+  render(props) {
+    const markdown = useMarkdown()
+    const [state, setState] = createSignal<"idle" | "busy" | "error">("idle")
+    const path = () => (typeof props.input.path === "string" ? props.input.path : "")
+    const done = () => props.status === "completed"
+    const download = async () => {
+      const save = markdown?.downloadFile
+      if (!save || !path() || state() === "busy") return
+      setState("busy")
+      await save(path()).then(
+        () => setState("idle"),
+        () => setState("error"),
+      )
+    }
+
+    return (
+      <div
+        data-component="okucode-document"
+        class="my-2 flex w-full max-w-[440px] items-center gap-3 rounded-xl border border-v2-border-border-muted bg-v2-background-bg-layer-01 px-3 py-2.5"
+      >
+        <span class="flex size-9 shrink-0 items-center justify-center rounded-lg bg-v2-background-bg-layer-02">
+          <FileIcon node={{ path: path() || "document.docx", type: "file" }} />
+        </span>
+        <span class="flex min-w-0 flex-1 flex-col">
+          <span class="truncate text-[14px] font-medium text-v2-text-text-base">{getFilename(path()) || "Document"}</span>
+          <span class="text-[12px] text-v2-text-text-faint">
+            {state() === "error" ? "Could not download. Try again." : done() ? "Document ready" : "Creating document…"}
+          </span>
+        </span>
+        <Show when={done() && markdown?.downloadFile}>
+          <button
+            type="button"
+            onClick={() => void download()}
+            disabled={state() === "busy"}
+            class="shrink-0 rounded-full bg-v2-background-bg-inverse px-3.5 py-1.5 text-[13px] font-medium text-v2-text-text-inverse disabled:opacity-50"
+          >
+            {state() === "busy" ? "Downloading…" : "Download"}
+          </button>
+        </Show>
+      </div>
+    )
+  },
+})
+
 ToolRegistry.register({
   name: "list",
   render(props) {

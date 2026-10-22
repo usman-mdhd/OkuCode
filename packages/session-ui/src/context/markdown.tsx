@@ -11,7 +11,11 @@ export type OpenMarkdownLocalFile = (path: string) => void
  */
 export type MarkdownLocalFileExists = (path: string) => boolean | Promise<boolean>
 
+/** Okutobus: download a file the agent created (path relative to the session folder, or absolute). */
+export type DownloadLocalFile = (path: string) => Promise<void>
+
 const context = createContext<{
+  readonly downloadFile?: DownloadLocalFile
   readonly readImage?: ReadMarkdownImage
   readonly openLocalFile?: OpenMarkdownLocalFile
   readonly localFileExists?: MarkdownLocalFileExists
@@ -20,6 +24,7 @@ const context = createContext<{
 
 export function MarkdownProvider(
   props: ParentProps<{
+    downloadFile?: DownloadLocalFile
     readImage?: ReadMarkdownImage
     openLocalFile?: OpenMarkdownLocalFile
     localFileExists?: MarkdownLocalFileExists
@@ -31,6 +36,9 @@ export function MarkdownProvider(
   return (
     <context.Provider
       value={{
+        get downloadFile() {
+          return props.downloadFile ?? parent?.downloadFile
+        },
         get readImage() {
           return props.readImage
         },

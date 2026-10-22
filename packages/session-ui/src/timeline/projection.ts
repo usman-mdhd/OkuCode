@@ -935,6 +935,9 @@ function toolGroupType(
   hasContextGroup: boolean,
   detail?: TimelineDetail,
 ) {
+  // Okutobus: keep created documents visible (download card) instead of folding them into a group.
+  if (content.name === "document" && content.state.status !== "error") return undefined
+
   if (detail) {
     if (content.name === "question" && !currentToolFailed(content)) return undefined
     const category = timelineCategory(content)!
