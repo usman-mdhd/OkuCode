@@ -1,10 +1,12 @@
 // Okutobus (OkuCode): simple start screen — a greeting, one message box and suggestion chips.
 // Typing here and pressing Enter opens a new chat in the chosen project and sends the message.
 import { createMemo, createSignal, For, Show } from "solid-js"
+import { Mark } from "@opencode/ui/logo"
 import { ServerConnection } from "@/runtime/server/registry"
 import { useTabs } from "@/shell/tabs/tabs"
 import type { HomeController } from "./model"
 import { autoSend } from "@/new-session/auto-send"
+import { userName } from "./user-name"
 
 const DEFAULT_CHAT_FOLDER = "OkuCode-Chats"
 
@@ -24,25 +26,6 @@ export function greeting(hour: number) {
   return "Working late"
 }
 
-const NAME_KEY = "okucode.home.name"
-
-function readName() {
-  try {
-    return localStorage.getItem(NAME_KEY)?.trim() ?? ""
-  } catch {
-    return ""
-  }
-}
-
-function saveName(value: string) {
-  try {
-    if (value) localStorage.setItem(NAME_KEY, value)
-    else localStorage.removeItem(NAME_KEY)
-  } catch {
-    // Storage can be unavailable (private mode); the name then lasts for this page only.
-  }
-}
-
 export function folderName(path: string) {
   return path.replace(/[\\/]+$/, "").split(/[\\/]/).pop() || path
 }
@@ -55,12 +38,14 @@ export function HomeHero(props: { home: HomeController }) {
   let input: HTMLTextAreaElement | undefined
 
   // The name is kept in this browser only (the V2 client does not load config.username yet).
-  const [name, setName] = createSignal(readName())
+  const name = userName.value
   const [editingName, setEditingName] = createSignal(false)
   const projects = createMemo(() => props.home.project.list())
   const directory = createMemo(() => {
     const chosen = picked()
     if (chosen && projects().some((project) => project.worktree === chosen)) return chosen
+    const selected = props.home.project.selected()?.worktree
+    if (selected) return selected
     const chats = projects().find((project) => folderName(project.worktree) === DEFAULT_CHAT_FOLDER)
     return chats?.worktree ?? props.home.project.newSession()?.worktree
   })
@@ -93,10 +78,13 @@ export function HomeHero(props: { home: HomeController }) {
   }
 
   return (
-    <section data-slot="okucode-home-hero" class="mx-auto flex w-full max-w-[720px] flex-col items-center gap-6 pb-6 pt-[12vh]">
-      <h1 class="text-center text-[28px] font-medium leading-tight text-v2-text-text-base md:text-[34px]">
+    <section data-slot="okucode-home-hero" class="mx-auto flex w-full max-w-[720px] flex-col items-center gap-6 pb-6 pt-6">
+      <h1 class="flex items-center justify-center gap-3 text-center text-[28px] font-medium leading-tight text-v2-text-text-base md:text-[34px]">
+        <Mark class="h-8 w-6 shrink-0" />
+        <span>
         {greeting(new Date().getHours())}
         <Show when={name()}>{(value) => <>, {value()}</>}</Show>
+        </span>
       </h1>
       <Show
         when={editingName()}
@@ -105,6 +93,7 @@ export function HomeHero(props: { home: HomeController }) {
             type="button"
             onClick={() => setEditingName(true)}
             class="-mt-4 text-[12px] text-v2-text-text-faint hover:text-v2-text-text-muted"
+            classList={{ "opacity-0 hover:opacity-100 focus:opacity-100 transition-opacity": !!name() }}
           >
             {name() ? "Change name" : "What should OkuCode call you?"}
           </button>
@@ -119,9 +108,8 @@ export function HomeHero(props: { home: HomeController }) {
           onKeyDown={(event) => {
             if (event.key === "Escape") setEditingName(false)
             if (event.key !== "Enter") return
-            const value = event.currentTarget.value.trim().slice(0, 40)
-            setName(value)
-            saveName(value)
+            const value = event.currentTarget.value
+            userName.set(value)
             setEditingName(false)
           }}
           onBlur={() => setEditingName(false)}
@@ -161,7 +149,11 @@ export function HomeHero(props: { home: HomeController }) {
                 onChange={(event) => setPicked(event.currentTarget.value)}
               >
                 <For each={projects()}>
-                  {(project) => <option value={project.worktree}>{folderName(project.worktree)}</option>}
+                  {(project) => (
+                    <option value={project.worktree} selected={project.worktree === directory()}>
+                      {folderName(project.worktree)}
+                    </option>
+                  )}
                 </For>
               </select>
             </label>

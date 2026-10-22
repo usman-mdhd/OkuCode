@@ -40,10 +40,11 @@ export function Home() {
         onScroll={(event) => scroll.viewport.update(event.currentTarget.scrollTop)}
         onWheel={scroll.viewport.containOuterWheel}
       >
-        {/* Okutobus: greeting + message box first; projects and past chats below. */}
-        <div class="px-3 lg:px-6">
+        {/* Okutobus: greeting + message box. On wide screens projects and chats live in the sidebar. */}
+        <div class="flex min-h-full flex-col justify-center px-3 lg:px-6" classList={{ "min-h-full": !mobile(), "pb-[8vh]": !mobile() }}>
           <HomeHero home={home} />
         </div>
+        <Show when={mobile()}>
         <div
           class={`
             mx-auto grid min-h-full w-full max-w-[1080px] grid-rows-[auto_minmax(0,1fr)] gap-4 px-3
@@ -55,6 +56,7 @@ export function Home() {
           </Show>
           <HomeSessions sessions={sessions} search={search} scroll={scroll} />
         </div>
+        </Show>
       </ScrollView>
       <div class="hidden shrink-0 px-3 py-2 md:block lg:hidden">
         <HomeUtilityNav

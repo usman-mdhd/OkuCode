@@ -11,6 +11,7 @@ import { useSettingsSurface } from "@/settings/surface"
 import { useSettings } from "@/settings/model"
 import { ExtensionServerCover } from "@/runtime/extension/server-shell"
 import { ExtensionSlot } from "@/runtime/extension/render"
+import { OkuCodeSidebar } from "@/shell/okucode-sidebar"
 
 export default function Layout(props: ParentProps) {
   const platform = usePlatform()
@@ -23,7 +24,9 @@ export default function Layout(props: ParentProps) {
     tabsMount: undefined,
   })
 
-  const verticalTabs = () => preferences.appearance.tabLayout() === "vertical" && !mobile()
+  // Okutobus: on wide screens the OkuCode sidebar replaces the tab strip (web) / vertical tabs.
+  const okuSidebar = () => !mobile()
+  const verticalTabs = () => preferences.appearance.tabLayout() === "vertical" && !mobile() && !okuSidebar()
   const bottomTitlebar = () => mobile() && preferences.general.mobileTitlebarPosition() === "bottom"
 
   return (
@@ -45,8 +48,13 @@ export default function Layout(props: ParentProps) {
             : "max(0px, calc(8px - var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px))))",
         }}
       >
-        <Titlebar verticalTabs={verticalTabs() ? { mount: state.tabsMount } : undefined} />
+        <Show when={!okuSidebar() || platform.platform === "desktop"}>
+          <Titlebar verticalTabs={verticalTabs() ? { mount: state.tabsMount } : undefined} />
+        </Show>
         <div class="flex flex-1 min-h-0 min-w-0 flex-row">
+          <Show when={okuSidebar()}>
+            <OkuCodeSidebar />
+          </Show>
           <Show when={verticalTabs()}>
             <aside
               ref={(element) => setState("tabsMount", element)}
