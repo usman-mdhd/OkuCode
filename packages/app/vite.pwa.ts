@@ -23,9 +23,10 @@ export function serviceWorker(directory: string) {
       // Workbox runs after Sentry's upload and cleanup, so do not publish an unuploaded map.
       sourcemap: false,
       globDirectory: directory,
-      clientsClaim: false,
-      // Keep each open tab on its complete build until all old clients close.
-      skipWaiting: false,
+      // Okutobus: OkuCode is served from this laptop and updated often; let a new build take over on the next reload
+      // instead of keeping the old cached UI until every tab is closed.
+      clientsClaim: true,
+      skipWaiting: true,
       inlineWorkboxRuntime: true,
       navigateFallback: "/index.html",
       // Pairing links must reach the server so it can set the session cookie.

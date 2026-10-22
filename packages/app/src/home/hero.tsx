@@ -1,6 +1,6 @@
 // Okutobus (OkuCode): simple start screen — a greeting, one message box and suggestion chips.
 // Typing here and pressing Enter opens a new chat in the chosen project and sends the message.
-import { createMemo, createSignal, For, Show } from "solid-js"
+import { createMemo, createResource, createSignal, For, onCleanup, Show } from "solid-js"
 import { Mark } from "@opencode/ui/logo"
 import { ServerConnection } from "@/runtime/server/registry"
 import { useTabs } from "@/shell/tabs/tabs"
@@ -10,12 +10,13 @@ import { userName } from "./user-name"
 
 const DEFAULT_CHAT_FOLDER = "OkuCode-Chats"
 
-const SUGGESTIONS = [
-  { label: "Write code", prompt: "Write a Python function that " },
-  { label: "Explain", prompt: "Explain in simple points: " },
-  { label: "Fix a bug", prompt: "Find and fix the bug in " },
-  { label: "Run tests", prompt: "Run the tests and tell me which ones fail" },
-  { label: "Compare", prompt: "Make a table comparing " },
+// Rotating examples in the empty message box.
+const HINTS = [
+  "How can I help you today?",
+  "Explain this code in simple words…",
+  "Fix the failing tests in my project…",
+  "Write a SQL query that…",
+  "Compare React and Angular in a table…",
 ]
 
 export function greeting(hour: number) {
@@ -41,14 +42,28 @@ export function HomeHero(props: { home: HomeController }) {
   const name = userName.value
   const [editingName, setEditingName] = createSignal(false)
   const projects = createMemo(() => props.home.project.list())
+  // With no project added yet, chat in the folder the server runs in (`okucode web` starts in ~/OkuCode-Chats).
+  const [serverFolder] = createResource(
+    () => props.home.server.focusedContext(),
+    (ctx) =>
+      ctx.sdk.api.location
+        .get()
+        .then((location) => location.directory)
+        .catch(() => undefined),
+  )
   const directory = createMemo(() => {
     const chosen = picked()
     if (chosen && projects().some((project) => project.worktree === chosen)) return chosen
     const selected = props.home.project.selected()?.worktree
     if (selected) return selected
     const chats = projects().find((project) => folderName(project.worktree) === DEFAULT_CHAT_FOLDER)
-    return chats?.worktree ?? props.home.project.newSession()?.worktree
+    return chats?.worktree ?? props.home.project.newSession()?.worktree ?? serverFolder()
   })
+  const [hint, setHint] = createSignal(0)
+  const timer = setInterval(() => {
+    if (!text()) setHint((value) => (value + 1) % HINTS.length)
+  }, 3500)
+  onCleanup(() => clearInterval(timer))
 
   const resize = () => {
     if (!input) return
@@ -70,12 +85,6 @@ export function HomeHero(props: { home: HomeController }) {
     autoSend.request(tab.draftID)
   }
 
-  const useSuggestion = (prompt: string) => {
-    setText(prompt)
-    input?.focus()
-    input?.setSelectionRange(prompt.length, prompt.length)
-    resize()
-  }
 
   return (
     <section data-slot="okucode-home-hero" class="mx-auto flex w-full max-w-[720px] flex-col items-center gap-6 pb-6 pt-6">
@@ -116,14 +125,19 @@ export function HomeHero(props: { home: HomeController }) {
         />
       </Show>
 
-      <div class="w-full rounded-[18px] border border-v2-border-border-muted bg-v2-background-bg-layer-01 p-3 shadow-[var(--v2-elevation-raised)] focus-within:border-v2-border-border-strong">
+      <div
+        class="w-full rounded-[24px] border border-v2-border-border-muted bg-v2-background-bg-layer-01 px-4 pb-3 pt-4 shadow-[var(--v2-elevation-raised)] transition-[box-shadow,border-color] focus-within:border-v2-border-border-strong focus-within:shadow-[0_0_0_4px_color-mix(in_srgb,var(--v2-text-text-accent)_14%,transparent),var(--v2-elevation-raised)]"
+        onClick={(event) => {
+          if (event.target === event.currentTarget) input?.focus()
+        }}
+      >
         <textarea
           ref={input}
           rows={2}
           value={text()}
-          placeholder="How can I help you today?"
+          placeholder={HINTS[hint()]}
           aria-label="Message OkuCode"
-          class="block max-h-[240px] w-full resize-none bg-transparent px-2 py-1 text-[15px] leading-6 text-v2-text-text-base outline-none placeholder:text-v2-text-text-faint"
+          class="block max-h-[240px] w-full resize-none bg-transparent text-[16px] leading-6 text-v2-text-text-base outline-none placeholder:text-v2-text-text-faint"
           onInput={(event) => {
             setText(event.currentTarget.value)
             resize()
@@ -135,28 +149,42 @@ export function HomeHero(props: { home: HomeController }) {
             }
           }}
         />
-        <div class="mt-2 flex items-center gap-2 px-1">
-          <Show
-            when={projects().length > 0}
-            fallback={<span class="text-[13px] text-v2-text-text-faint">Add a project on the left to start chatting</span>}
-          >
-            <label class="flex min-w-0 items-center gap-1.5 text-[13px] text-v2-text-text-faint">
-              <span aria-hidden="true">📁</span>
-              <select
-                aria-label="Project folder for this chat"
-                class="min-w-0 max-w-[260px] cursor-pointer truncate rounded-md bg-transparent py-1 pr-1 text-v2-text-text-muted outline-none hover:text-v2-text-text-base"
-                value={directory() ?? ""}
-                onChange={(event) => setPicked(event.currentTarget.value)}
+        <div class="mt-3 flex items-center gap-2">
+          <Show when={directory()}>
+            {(dir) => (
+              <label
+                class="relative flex min-w-0 max-w-[60%] cursor-pointer items-center gap-1.5 rounded-full border border-v2-border-border-muted px-3 py-1 text-[12.5px] text-v2-text-text-muted hover:border-v2-border-border-strong hover:text-v2-text-text-base"
+                title={dir()}
               >
-                <For each={projects()}>
-                  {(project) => (
-                    <option value={project.worktree} selected={project.worktree === directory()}>
-                      {folderName(project.worktree)}
-                    </option>
-                  )}
-                </For>
-              </select>
-            </label>
+                <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true" class="shrink-0">
+                  <path
+                    d="M2 4.5A1.5 1.5 0 0 1 3.5 3h3l1.5 1.5h4.5A1.5 1.5 0 0 1 14 6v5.5A1.5 1.5 0 0 1 12.5 13h-9A1.5 1.5 0 0 1 2 11.5v-7Z"
+                    stroke="currentColor"
+                    stroke-width="1.4"
+                    stroke-linejoin="round"
+                  />
+                </svg>
+                <span class="truncate">{folderName(dir())}</span>
+                <Show when={projects().length > 1}>
+                  <svg width="10" height="10" viewBox="0 0 10 10" fill="none" aria-hidden="true" class="shrink-0">
+                    <path d="M2.5 4l2.5 2.5L7.5 4" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" />
+                  </svg>
+                  <select
+                    aria-label="Project folder for this chat"
+                    class="absolute inset-0 cursor-pointer opacity-0"
+                    onChange={(event) => setPicked(event.currentTarget.value)}
+                  >
+                    <For each={projects()}>
+                      {(project) => (
+                        <option value={project.worktree} selected={project.worktree === dir()}>
+                          {folderName(project.worktree)}
+                        </option>
+                      )}
+                    </For>
+                  </select>
+                </Show>
+              </label>
+            )}
           </Show>
           <div class="flex-1" />
           <button
@@ -164,27 +192,13 @@ export function HomeHero(props: { home: HomeController }) {
             aria-label="Send message"
             disabled={!text().trim() || !directory() || sending()}
             onClick={() => void send()}
-            class="flex size-9 items-center justify-center rounded-full bg-v2-background-bg-inverse text-v2-text-text-inverse transition-opacity disabled:opacity-30"
+            class="flex size-9 items-center justify-center rounded-full bg-v2-background-bg-inverse text-v2-text-text-inverse transition-[opacity,transform] hover:scale-105 disabled:scale-100 disabled:opacity-25"
           >
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
               <path d="M8 13V3M8 3L3.5 7.5M8 3l4.5 4.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
             </svg>
           </button>
         </div>
-      </div>
-
-      <div class="flex flex-wrap justify-center gap-2">
-        <For each={SUGGESTIONS}>
-          {(item) => (
-            <button
-              type="button"
-              onClick={() => useSuggestion(item.prompt)}
-              class="rounded-full border border-v2-border-border-muted px-3.5 py-1.5 text-[13px] text-v2-text-text-muted transition-colors hover:bg-v2-background-bg-layer-01 hover:text-v2-text-text-base"
-            >
-              {item.label}
-            </button>
-          )}
-        </For>
       </div>
     </section>
   )

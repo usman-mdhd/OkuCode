@@ -45,6 +45,9 @@ if [ "$1" = "web" ]; then
     sleep 1
   fi
 
+  # Default folder for normal chats (the home screen uses it when no project is added yet).
+  mkdir -p "$HOME/OkuCode-Chats" 2>/dev/null || true
+
   PASSWORD="${OKUCODE_PASSWORD:-${OPENCODE_PASSWORD:-}}"
   if [ -z "$PASSWORD" ]; then PASSWORD="$(LC_ALL=C tr -dc 'a-z0-9' </dev/urandom | head -c 12)"; fi
   URL="http://127.0.0.1:$PORT"
@@ -59,6 +62,7 @@ if [ "$1" = "web" ]; then
   if command -v open >/dev/null 2>&1; then (sleep 3 && open "$URL") >/dev/null 2>&1 &
   elif command -v xdg-open >/dev/null 2>&1; then (sleep 3 && xdg-open "$URL") >/dev/null 2>&1 &
   fi
+  cd "$HOME/OkuCode-Chats" 2>/dev/null || true
   OPENCODE_PASSWORD="$PASSWORD" exec bun --preload "$PRELOAD" "$CLI/src/index.ts" serve --hostname 127.0.0.1 --port "$PORT" "$@"
 fi
 
