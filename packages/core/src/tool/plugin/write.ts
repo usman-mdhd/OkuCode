@@ -16,6 +16,8 @@ import { Formatter } from "../../formatter.js"
 import { FileAccess } from "../../file-access.js"
 import { Permission } from "../../permission.js"
 import { fileDiff } from "./file-diff.js"
+import { extname } from "node:path"
+import { DOCUMENT_TYPES, render } from "./document.js"
 
 export const name = "write"
 
@@ -84,6 +86,14 @@ export const Plugin = {
                 agent: context.agent,
                 source,
               })
+              // Okutobus: a .docx/.pdf/... written as text would be a broken file; build the real document instead.
+              if (DOCUMENT_TYPES.has(extname(target.absolute).toLowerCase())) {
+                const bytes = yield* Effect.try({
+                  try: () => render(target.absolute, input.content),
+                  catch: (error) => (error instanceof Error ? error : new Error(String(error))),
+                })
+                return yield* fileMutation.write({ target, content: bytes })
+              }
               const result = yield* fileMutation.writeTextPreservingBom({ target, content: input.content })
               const bom = (yield* FileMutation.readText(environment.files, target.absolute)).bom
               if (yield* formatter.file(target.absolute)) {
