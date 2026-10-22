@@ -30,6 +30,7 @@ import { SessionStep } from "./step.js"
 import { ToolOutput } from "../../tool-output.js"
 import { Plugin } from "../../plugin.js"
 import { MAX_STEPS_PROMPT } from "./max-steps.js"
+import { OkuNudge } from "../../okutobus/nudge.js"
 
 const CONTINUE_AFTER_INCOMPLETE_STREAM =
   "The previous response was interrupted. Continue from where you left off without repeating completed content."
@@ -265,7 +266,29 @@ const layer = Layer.effect(
           ),
         })
         const completed = yield* SessionStep.Outcome.$match(outcome, {
-          Completed: (outcome) => Effect.succeed(outcome.needsContinuation),
+          Completed: Effect.fnUntraced(function* (outcome) {
+            if (outcome.needsContinuation || stepLimitReached || !prepared.request.tools?.length) return outcome.needsContinuation
+            // Okutobus: the model announced an action but called no tool — remind it once and try again.
+            const rows = yield* db
+              .select()
+              .from(SessionMessageTable)
+              .where(
+                and(
+                  eq(SessionMessageTable.session_id, sessionID),
+                  inArray(SessionMessageTable.type, ["user", "assistant", "synthetic"]),
+                ),
+              )
+              .orderBy(desc(SessionMessageTable.seq))
+              .limit(8)
+              .all()
+              .pipe(Effect.orDie)
+            const recent = yield* Effect.forEach(rows, SessionHistory.decodeMessageRow)
+            const nudge = OkuNudge.decide(recent)
+            if (!nudge) return false
+            yield* bus.publish(SessionEvent.Synthetic, { sessionID, text: nudge })
+            assistantMessageID = SessionMessage.ID.create()
+            return undefined
+          }),
           Retry: (outcome) =>
             retry.wait({
               decision: outcome.decision,

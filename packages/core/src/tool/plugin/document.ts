@@ -8,9 +8,9 @@ export * as DocumentTool from "./document.js"
 import type { Context } from "@opencode/plugin/effect/plugin"
 import { ToolFailure } from "@opencode/ai"
 import { spawnSync } from "node:child_process"
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
-import { basename, extname, join } from "node:path"
+import { basename, dirname, extname, join } from "node:path"
 import { Effect, Schema } from "effect"
 import { FileAccess } from "../../file-access.js"
 import { FileMutation } from "../../file-mutation.js"
@@ -28,6 +28,10 @@ export const Input = Schema.Struct({
     description: "The full document in Markdown: # headings, paragraphs, **bold**, lists, | tables |, ``` code ```",
   }),
   title: Schema.optional(Schema.String).annotate({ description: "Optional title shown at the top of the document" }),
+  append: Schema.optional(Schema.Boolean).annotate({
+    description:
+      "true = add `content` to the end of an existing document made earlier (send only the new part). false/omitted = create or replace the whole document.",
+  }),
 })
 
 export const Output = Schema.Struct({
@@ -79,6 +83,27 @@ function convert(markdown: string, title: string | undefined, extension: string)
   }
 }
 
+/** Hidden Markdown copies of created documents: <folder>/.okucode/documents/<file>.json */
+export const sources = {
+  file: (absolute: string) => join(dirname(absolute), ".okucode", "documents", `${basename(absolute)}.json`),
+  read(absolute: string): { markdown: string; title?: string } | undefined {
+    try {
+      const value = JSON.parse(readFileSync(sources.file(absolute), "utf8"))
+      return typeof value?.markdown === "string" ? value : undefined
+    } catch {
+      return undefined
+    }
+  },
+  write(absolute: string, value: { markdown: string; title?: string }) {
+    try {
+      mkdirSync(dirname(sources.file(absolute)), { recursive: true })
+      writeFileSync(sources.file(absolute), JSON.stringify(value))
+    } catch {
+      // Without the copy the document still works; it just cannot be extended with append later.
+    }
+  },
+}
+
 export function render(path: string, markdown: string, title?: string): Uint8Array | string {
   const extension = extname(path).toLowerCase()
   if (extension === ".docx") return OkuDocument.docx(markdown, title)
@@ -101,7 +126,7 @@ export const Plugin = {
           name,
           options: { codemode: false, permission: "edit" },
           description:
-            "Creates a document file the user can open in Word or other apps: Word (.docx), PDF (.pdf), web page (.html), OpenDocument (.odt), Rich Text (.rtf), PowerPoint (.pptx), Markdown (.md) or text (.txt).\n\nUse this tool whenever the user asks for a Word file, docx, document, report, letter or PDF. Write the whole document as Markdown in `content` (headings, paragraphs, bold, bullet and numbered lists, tables, code blocks); the tool turns it into the requested file type based on the extension in `path`.",
+            "Creates a document file the user can open in Word or other apps: Word (.docx), PDF (.pdf), web page (.html), OpenDocument (.odt), Rich Text (.rtf), PowerPoint (.pptx), Markdown (.md) or text (.txt).\n\nUse this tool whenever the user asks for a Word file, docx, document, report, letter or PDF. Write the whole document as Markdown in `content` (headings, paragraphs, bold, bullet and numbered lists, tables, code blocks); the tool turns it into the requested file type based on the extension in `path`.\n\nTo add something to a document you already made (for example \"add Python examples to the same document\"), call this tool again with the same `path`, `append: true` and only the new Markdown. The chat shows the user a Download button for the file.",
           input: Input,
           output: Output,
           execute: (input, context) =>
@@ -120,14 +145,22 @@ export const Plugin = {
                 source,
               })
               const content = yield* Effect.try({
-                try: () => render(input.path, input.content, input.title),
+                try: () => {
+                  // The Markdown source of each document is kept next to it (hidden) so it can be extended later.
+                  const previous = sources.read(target.absolute)
+                  const markdown = input.append && previous ? `${previous.markdown.trimEnd()}\n\n${input.content}` : input.content
+                  const title = input.title ?? (input.append ? previous?.title : undefined)
+                  const bytes = render(input.path, markdown, title)
+                  sources.write(target.absolute, { markdown, title })
+                  return bytes
+                },
                 catch: (error) => (error instanceof Error ? error : new Error(String(error))),
               })
               return yield* fileMutation.write({ target, content })
             }).pipe(
               Effect.map((output) => ({
                 output,
-                content: `Created document: ${output.resource}. Tell the user the file name and where it is; they can open it in Word or another app.`,
+                content: `${input.append ? "Updated" : "Created"} document: ${output.resource}. The user can click Download in the chat to get it. Reply in one or two short sentences; do not paste the document content.`,
               })),
               Effect.mapError(
                 (error) =>
