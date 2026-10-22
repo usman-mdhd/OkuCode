@@ -90,7 +90,7 @@ test("the Home shortcut focuses session search, and the Home button leaves focus
   await editor.click()
 
   await page.keyboard.press("ControlOrMeta+b")
-  const search = page.getByRole("textbox", { name: /Search sessions/ })
+  const search = page.getByRole("textbox", { name: /Search chats/ })
   await expect(search).toBeFocused()
   await page.keyboard.type("jump")
   await expect(page.getByRole("option")).toHaveCount(1)

@@ -112,7 +112,7 @@ test("pointer selection, keyboard navigation, the empty state, and the local fin
   await view.settings.getByRole("button", { name: "Back to app", exact: true }).click()
   await expect(view.settings).toBeHidden()
   await findShortcut(page)
-  await expect(page.getByRole("textbox", { name: /Search sessions/ })).toBeFocused()
+  await expect(page.getByRole("textbox", { name: /Search chats/ })).toBeFocused()
 })
 
 test("a long empty-state query keeps its closing quote beside the ellipsis while typing and resizing", async ({

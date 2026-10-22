@@ -320,7 +320,7 @@ async function waitForHome(page: Page, mark: (name: Milestone) => void) {
 
   const projects = page.getByRole("complementary", { name: "Projects", exact: true })
   const sessions = page.getByRole("region", { name: "Recent sessions", exact: true })
-  const search = page.getByRole("textbox", { name: "Search sessions", exact: true })
+  const search = page.getByRole("textbox", { name: "Search chats", exact: true })
   const addProject = projects.locator('button[data-action="home-add-project-row"]')
   await expect(projects).toBeVisible({ timeout: 120_000 })
   await expect(sessions).toBeVisible()

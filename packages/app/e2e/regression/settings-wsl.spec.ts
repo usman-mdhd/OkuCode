@@ -148,7 +148,7 @@ test("WSL session and draft tabs outlive the extension going away until the serv
     `/e2e/utils/settings-wsl.html?${new URLSearchParams({ server: SERVER, mode: "ready", wsl: REMOTE_SERVER, path: href })}`,
   )
   await expectSessionTitle(page, wsl.title)
-  await page.getByRole("button", { name: "New session", exact: true }).click()
+  await page.getByRole("button", { name: "New chat", exact: true }).click()
   await expect(page.getByRole("heading", { name: wsl.title })).toHaveCount(0)
   const editor = page.locator('[data-component="composer-editor"]')
   await editor.fill("keep this draft")
@@ -218,7 +218,7 @@ test("an SSH host that asks for sign-in again opens the dialog once per selected
 
   // Another tab selected and this one selected again is a new selection, even while the host was ready.
   const tabs = page.locator("a[data-titlebar-tab-link]")
-  await page.getByRole("button", { name: "New session", exact: true }).click()
+  await page.getByRole("button", { name: "New chat", exact: true }).click()
   await expect(tabs).toHaveCount(2)
   await expect(tabs.nth(1)).toHaveAttribute("href", /^\/new-session\?draftId=/)
   await expect(page.getByRole("heading", { name: box.title })).toHaveCount(0)

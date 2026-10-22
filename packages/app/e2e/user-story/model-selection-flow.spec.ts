@@ -155,7 +155,7 @@ test("restores each existing session's model and variant when switching tabs", a
   await expect(variant).toHaveText("high")
 
   // A new draft starts from the current session's non-default model and chosen variant.
-  await page.getByRole("button", { name: "New session", exact: true }).click()
+  await page.getByRole("button", { name: "New chat", exact: true }).click()
   await expect(page).toHaveURL(/\/new-session\?draftId=/)
   await expect(modelControl).toHaveText("Model B")
   await expect(variant).toHaveText("high")

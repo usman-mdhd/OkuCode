@@ -2,14 +2,15 @@
 // It replaces the tab strip on wide screens so the app works like a simple chat app.
 import { useLocation, useNavigate } from "@solidjs/router"
 import { Mark } from "@opencode/ui/logo"
-import { createMemo, createSignal, For, type JSX, Show } from "solid-js"
+import { createMemo, createSignal, For, Show } from "solid-js"
 import { createHomeController } from "@/home/model"
 import { createHomeProjectsController } from "@/home/projects/controller"
-import { createHomeSessionsController } from "@/home/sessions/controller"
+import { createHomeSessionsController, type HomeSessionRecord } from "@/home/sessions/controller"
 import { folderName } from "@/home/hero"
 import { userName } from "@/home/user-name"
 import { sessionTitle } from "@/session/title"
 import { useSettingsCommand } from "@/settings/command"
+import { usePlatform } from "@/runtime/platform/platform"
 
 const COLLAPSED_KEY = "okucode.sidebar.collapsed"
 
@@ -38,17 +39,23 @@ const ICONS = {
   chat: "M3 3.5h10v7H6.5L3.5 13v-2.5H3v-7Z",
   settings: "M8 10a2 2 0 1 0 0-4 2 2 0 0 0 0 4Zm5.5-2-1.3-.5-.3-.8.6-1.2-1-1-1.2.6-.8-.3L9 2.5H7l-.5 1.3-.8.3-1.2-.6-1 1 .6 1.2-.3.8L2.5 7v2l1.3.5.3.8-.6 1.2 1 1 1.2-.6.8.3L7 13.5h2l.5-1.3.8-.3 1.2.6 1-1-.6-1.2.3-.8 1.3-.5V8Z",
   panel: "M2.5 3h11v10h-11zM6 3v10",
+  menu: "M2.5 4.5h11M2.5 8h11M2.5 11.5h11",
+  search: "M7 12A5 5 0 1 0 7 2a5 5 0 0 0 0 10Zm7 2-3.5-3.5",
+  help: "M8 14.5A6.5 6.5 0 1 0 8 1.5a6.5 6.5 0 0 0 0 13ZM6.2 6.2a1.9 1.9 0 0 1 3.6.7c0 1.3-1.8 1.6-1.8 2.8M8 11.6h.01",
 }
 
-function Section(props: { title: string; action?: JSX.Element; children: JSX.Element }) {
+function ChatRow(props: { record: HomeSessionRecord; active: boolean; open: () => void }) {
+  const title = () => sessionTitle(props.record.session.title) || "New chat"
   return (
-    <div class="mt-5 flex min-h-0 flex-col">
-      <div class="flex items-center justify-between px-2.5 pb-1">
-        <span class="text-[12px] font-medium text-v2-text-text-faint">{props.title}</span>
-        {props.action}
-      </div>
-      {props.children}
-    </div>
+    <button
+      type="button"
+      class={`${row} text-[13.5px]`}
+      classList={{ "bg-v2-background-bg-layer-02": props.active }}
+      title={`${title()} · ${props.record.projectName}`}
+      onClick={props.open}
+    >
+      <span class="truncate">{title()}</span>
+    </button>
   )
 }
 
@@ -59,7 +66,10 @@ export function OkuCodeSidebar() {
   const home = createHomeController()
   const projects = createHomeProjectsController(home)
   const sessions = createHomeSessionsController(home)
+  const platform = usePlatform()
   const [collapsed, setCollapsed] = createSignal(readCollapsed())
+  const [menuOpen, setMenuOpen] = createSignal(false)
+  const [query, setQuery] = createSignal("")
 
   const toggle = () => {
     const next = !collapsed()
@@ -73,7 +83,15 @@ export function OkuCodeSidebar() {
 
   const server = () => home.server.focused()
   const selected = () => home.selection.value().directory
-  const recents = createMemo(() => sessions.data.records().slice(0, 40))
+  const found = createMemo(() => {
+    const text = query().trim().toLowerCase()
+    if (!text) return []
+    return sessions.data
+      .searchRecords()
+      .filter((record) => (sessionTitle(record.session.title) ?? "").toLowerCase().includes(text))
+      .slice(0, 50)
+  })
+  const isOpen = (record: HomeSessionRecord) => location.pathname.endsWith(`/session/${record.session.id}`)
   const initial = () => (userName.value() || "You").charAt(0).toUpperCase()
 
   const newChat = () => {
@@ -122,10 +140,34 @@ export function OkuCodeSidebar() {
           New chat
         </button>
 
-        <div class="flex min-h-0 flex-1 flex-col overflow-y-auto">
-          <Section
-            title="Projects"
-            action={
+        {/* ☰ opens Projects, Settings and Help; next to it, search the chat history. */}
+        <div class="mt-2 flex items-center gap-1.5">
+          <button
+            type="button"
+            aria-label="Menu: projects, settings and help"
+            aria-expanded={menuOpen()}
+            class="rounded-lg p-2 hover:bg-v2-background-bg-layer-02"
+            classList={{ "bg-v2-background-bg-layer-02": menuOpen() }}
+            onClick={() => setMenuOpen(!menuOpen())}
+          >
+            <Icon path={ICONS.menu} />
+          </button>
+          <label class="flex min-w-0 flex-1 items-center gap-2 rounded-lg border border-v2-border-border-muted bg-v2-background-bg-base px-2.5 py-1.5 focus-within:border-v2-border-border-strong">
+            <Icon path={ICONS.search} />
+            <input
+              aria-label="Search chats"
+              placeholder="Search chats"
+              value={query()}
+              onInput={(event) => setQuery(event.currentTarget.value)}
+              class="min-w-0 flex-1 bg-transparent text-[13.5px] text-v2-text-text-base outline-none placeholder:text-v2-text-text-faint"
+            />
+          </label>
+        </div>
+
+        <Show when={menuOpen()}>
+          <div class="mt-2 rounded-xl border border-v2-border-border-muted bg-v2-background-bg-layer-01 p-1.5">
+            <div class="flex items-center justify-between px-2.5 pb-1 pt-1">
+              <span class="text-[12px] font-medium text-v2-text-text-faint">Projects</span>
               <button
                 type="button"
                 aria-label="Add project"
@@ -137,9 +179,8 @@ export function OkuCodeSidebar() {
               >
                 <Icon path={ICONS.plus} />
               </button>
-            }
-          >
-            <For each={home.project.list()} fallback={<span class="px-2.5 text-[13px] text-v2-text-text-faint">Add a folder to start</span>}>
+            </div>
+            <For each={home.project.list()} fallback={<span class="block px-2.5 py-1 text-[13px] text-v2-text-text-faint">Add a folder to start</span>}>
               {(project) => (
                 <button
                   type="button"
@@ -153,22 +194,54 @@ export function OkuCodeSidebar() {
                 </button>
               )}
             </For>
-          </Section>
+            <div class="my-1.5 border-t border-v2-border-border-muted" />
+            <button type="button" class={row} onClick={() => openSettings()}>
+              <Icon path={ICONS.settings} />
+              Settings
+            </button>
+            <button type="button" class={row} onClick={() => platform.openExternal("https://okutobus.com")}>
+              <Icon path={ICONS.help} />
+              Help
+            </button>
+          </div>
+        </Show>
 
-          <Section title={selected() ? `Chats in ${folderName(selected() ?? "")}` : "Recents"}>
-            <For each={recents()} fallback={<span class="px-2.5 text-[13px] text-v2-text-text-faint">No chats yet</span>}>
-              {(record) => (
-                <button
-                  type="button"
-                  class={`${row} text-[13.5px]`}
-                  title={`${sessionTitle(record.session.title) ?? "Chat"} · ${record.projectName}`}
-                  onClick={() => sessions.session.open(record.session)}
-                >
-                  <span class="truncate">{sessionTitle(record.session.title) || "New chat"}</span>
-                </button>
-              )}
+        <div class="mt-3 flex min-h-0 flex-1 flex-col overflow-y-auto">
+          <Show when={selected()}>
+            <div class="flex items-center justify-between px-2.5 pb-1">
+              <span class="truncate text-[12px] text-v2-text-text-faint">Chats in {folderName(selected() ?? "")}</span>
+              <button
+                type="button"
+                class="text-[12px] text-v2-text-text-faint hover:text-v2-text-text-base"
+                onClick={() => {
+                  const conn = server()
+                  const dir = selected()
+                  if (conn && dir) home.project.select(conn, dir)
+                }}
+              >
+                Show all
+              </button>
+            </div>
+          </Show>
+          <Show
+            when={query().trim()}
+            fallback={
+              <For each={sessions.data.groups()} fallback={<span class="px-2.5 text-[13px] text-v2-text-text-faint">No chats yet</span>}>
+                {(group) => (
+                  <Show when={group.sessions.length > 0}>
+                    <div class="mb-2">
+                      <div class="px-2.5 pb-1 pt-2 text-[12px] font-medium text-v2-text-text-faint">{group.title}</div>
+                      <For each={group.sessions}>{(record) => <ChatRow record={record} active={isOpen(record)} open={() => sessions.session.open(record.session)} />}</For>
+                    </div>
+                  </Show>
+                )}
+              </For>
+            }
+          >
+            <For each={found()} fallback={<span class="px-2.5 text-[13px] text-v2-text-text-faint">No chats found</span>}>
+              {(record) => <ChatRow record={record} active={isOpen(record)} open={() => sessions.session.open(record.session)} />}
             </For>
-          </Section>
+          </Show>
         </div>
 
         <div class="mt-2 flex items-center gap-2 border-t border-v2-border-border-muted px-1.5 pt-2">

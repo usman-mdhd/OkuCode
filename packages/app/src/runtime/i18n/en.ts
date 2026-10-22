@@ -41,7 +41,7 @@ export const dict = {
 
   "command.palette": "Command palette",
 
-  "command.session.new": "New session",
+  "command.session.new": "New chat",
   "command.session.previous": "Previous session",
   "command.session.next": "Next session",
   "command.session.previous.unseen": "Previous unread session",
@@ -510,8 +510,8 @@ export const dict = {
   "home.recentlyClosed": "Recently closed",
   "home.server.collapse": "Collapse server projects",
   "home.server.expand": "Expand server projects",
-  "home.sessions.search.placeholder": "Search sessions",
-  "home.sessions.search.placeholder.scoped": "Search sessions in {{scope}}",
+  "home.sessions.search.placeholder": "Search chats",
+  "home.sessions.search.placeholder.scoped": "Search chats in {{scope}}",
   "home.sessions.search.sessions": "Sessions",
   "home.sessions.search.noResults": "No sessions found for {{query}}",
   "home.sessions.empty": "Nothing here yet",

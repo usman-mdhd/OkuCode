@@ -242,7 +242,7 @@ const source = {
   "ui.message.copy": "Copy",
   "ui.message.copyMessage": "Copy message",
   "ui.message.copyFullMessage": "Copy full message",
-  "ui.message.forkMessage": "Fork to new session",
+  "ui.message.forkMessage": "Fork to new chat",
   "ui.message.revertMessage": "Revert message",
   "ui.message.moveToQueue": "Move to queue",
   "ui.message.pending": "Pending",

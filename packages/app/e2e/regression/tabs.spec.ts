@@ -337,7 +337,7 @@ test("vertical tabs resize, scroll, show shortcut hints, and navigate", async ({
     await expect(sidebar).toHaveCSS("width", width)
   }
 
-  for (const name of ["Home", "New session"]) {
+  for (const name of ["Home", "New chat"]) {
     const label = sidebar.getByRole("button", { name, exact: true }).getByText(name, { exact: true })
     await expect(label).toBeVisible()
     await expect
