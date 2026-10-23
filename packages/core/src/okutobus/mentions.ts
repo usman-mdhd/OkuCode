@@ -11,6 +11,8 @@ import { pathToFileURL } from "node:url"
 
 export const MAX_FILES = 4
 export const MAX_BYTES = 60 * 1024
+/** Files up to this size are always sent whole, even when the message names only some lines. */
+export const WHOLE_BYTES = 24 * 1024
 
 export type Found = { file: string; start?: number; end?: number }
 
@@ -53,30 +55,44 @@ export function attachments(
   text: string,
   directory: string,
   attached: readonly string[] = [],
-): { uri: string; name: string }[] {
+): { uri: string; name: string; description?: string }[] {
   const root = path.resolve(directory)
   const already = new Set(attached.map((uri) => filePath(uri)).filter((value): value is string => !!value))
-  const result: { uri: string; name: string }[] = []
+  const result: { uri: string; name: string; description?: string }[] = []
   for (const item of parse(text)) {
     if (result.length >= MAX_FILES) break
     const absolute = path.resolve(root, item.file)
     if (absolute !== root && !absolute.startsWith(root + path.sep)) continue
     if (already.has(absolute)) continue
+    let size: number
     try {
       const info = statSync(absolute)
       if (!info.isFile() || info.size > MAX_BYTES) continue
+      size = info.size
     } catch {
       continue
     }
     already.add(absolute)
     const url = pathToFileURL(absolute)
-    if (item.start !== undefined) {
-      url.searchParams.set("start", String(item.start))
-      url.searchParams.set("end", String(item.end ?? item.start))
+    const name = path.relative(root, absolute)
+    if (item.start === undefined) {
+      result.push({ uri: url.href, name, description: "The whole file." })
+      continue
     }
-    const lines =
-      item.start === undefined ? "" : item.end && item.end !== item.start ? ` (lines ${item.start}-${item.end})` : ` (line ${item.start})`
-    result.push({ uri: url.href, name: `${path.relative(root, absolute)}${lines}` })
+    const lines = item.end && item.end !== item.start ? `lines ${item.start}-${item.end}` : `line ${item.start}`
+    // A model shown only some lines may rewrite the file with just those lines and delete the rest, so small files
+    // are sent whole and the named lines are pointed out.
+    if (size <= WHOLE_BYTES) {
+      result.push({ uri: url.href, name, description: `The whole file. The user is asking about ${lines}.` })
+      continue
+    }
+    url.searchParams.set("start", String(item.start))
+    url.searchParams.set("end", String(item.end ?? item.start))
+    result.push({
+      uri: url.href,
+      name: `${name} (${lines})`,
+      description: `Only ${lines} of a longer file. To change it, use the edit tool on these lines; never write the whole file from this part.`,
+    })
   }
   return result
 }

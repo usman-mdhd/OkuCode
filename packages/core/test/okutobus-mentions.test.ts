@@ -33,12 +33,20 @@ describe("OkuMentions.attachments", () => {
   mkdirSync(path.join(dir, "src"))
   writeFileSync(path.join(dir, "src", "app.ts"), "x")
   writeFileSync(path.join(dir, "big.txt"), "x".repeat(OkuMentions.MAX_BYTES + 1))
+  writeFileSync(path.join(dir, "long.py"), "x = 1\n".repeat(OkuMentions.WHOLE_BYTES / 4))
 
-  test("attaches existing files with line ranges", () => {
+  test("sends small files whole and points out the named lines", () => {
     const list = OkuMentions.attachments("@calculator.py#L2-3 and src/app.ts", dir)
-    expect(list.map((item) => item.name)).toEqual(["calculator.py (lines 2-3)", path.join("src", "app.ts")])
-    expect(new URL(list[0]!.uri).searchParams.get("start")).toBe("2")
-    expect(new URL(list[0]!.uri).searchParams.get("end")).toBe("3")
+    expect(list.map((item) => item.name)).toEqual(["calculator.py", path.join("src", "app.ts")])
+    expect(new URL(list[0]!.uri).search).toBe("")
+    expect(list[0]!.description).toBe("The whole file. The user is asking about lines 2-3.")
+  })
+
+  test("sends only the named lines of long files, with a warning", () => {
+    const [item] = OkuMentions.attachments("long.py lines 5-11", dir)
+    expect(item!.name).toBe("long.py (lines 5-11)")
+    expect(new URL(item!.uri).searchParams.get("start")).toBe("5")
+    expect(item!.description).toContain("never write the whole file")
   })
 
   test("skips missing, too big, outside and already attached files", () => {
