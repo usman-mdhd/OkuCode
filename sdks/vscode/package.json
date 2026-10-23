@@ -1,23 +1,21 @@
 {
-  "name": "opencode",
-  "displayName": "opencode",
-  "description": "opencode for VS Code",
-  "version": "2.1.0",
-  "publisher": "sst-dev",
+  "name": "okucode",
+  "displayName": "OkuCode",
+  "description": "OkuCode, the Okutobus AI coding agent, inside VS Code",
+  "version": "0.1.0",
+  "publisher": "okutobus",
   "repository": {
     "type": "git",
-    "url": "https://github.com/sst/opencode"
+    "url": "https://github.com/OKUTOBUS-TECH/okucode-cli"
   },
   "license": "MIT",
   "icon": "images/icon.png",
-  "galleryBanner": {
-    "color": "#000000",
-    "theme": "dark"
-  },
   "engines": {
     "vscode": "^1.94.0"
   },
   "categories": [
+    "AI",
+    "Programming Languages",
     "Other"
   ],
   "activationEvents": [],
@@ -25,60 +23,91 @@
   "contributes": {
     "commands": [
       {
-        "command": "opencode.openTerminal",
-        "title": "Open opencode",
+        "command": "okucode.openTerminal",
+        "title": "OkuCode: Open",
         "icon": {
           "light": "images/button-dark.svg",
           "dark": "images/button-light.svg"
         }
       },
       {
-        "command": "opencode.openNewTerminal",
-        "title": "Open opencode in new tab",
+        "command": "okucode.openNewTerminal",
+        "title": "OkuCode: Open in New Tab",
         "icon": {
           "light": "images/button-dark.svg",
           "dark": "images/button-light.svg"
         }
       },
       {
-        "command": "opencode.addFilepathToTerminal",
-        "title": "Add Filepath to Terminal"
+        "command": "okucode.openChatPanel",
+        "title": "OkuCode: Open Chat Panel"
+      },
+      {
+        "command": "okucode.addFilepathToTerminal",
+        "title": "OkuCode: Add File to Chat"
+      },
+      {
+        "command": "okucode.askAboutFile",
+        "title": "Ask OkuCode about this"
       }
     ],
     "menus": {
       "editor/title": [
         {
-          "command": "opencode.openNewTerminal",
+          "command": "okucode.openNewTerminal",
           "group": "navigation"
+        }
+      ],
+      "editor/context": [
+        {
+          "command": "okucode.askAboutFile",
+          "group": "okucode@1"
+        },
+        {
+          "command": "okucode.addFilepathToTerminal",
+          "group": "okucode@2"
+        }
+      ],
+      "explorer/context": [
+        {
+          "command": "okucode.askAboutFile",
+          "when": "!explorerResourceIsFolder",
+          "group": "okucode@1"
         }
       ]
     },
     "keybindings": [
       {
-        "command": "opencode.openTerminal",
-        "title": "Run opencode",
-        "key": "cmd+escape",
-        "mac": "cmd+escape",
-        "win": "ctrl+escape",
-        "linux": "ctrl+escape"
+        "command": "okucode.openTerminal",
+        "key": "ctrl+escape",
+        "mac": "cmd+escape"
       },
       {
-        "command": "opencode.openNewTerminal",
-        "title": "Run opencode",
-        "key": "cmd+shift+escape",
-        "mac": "cmd+shift+escape",
-        "win": "ctrl+shift+escape",
-        "linux": "ctrl+shift+escape"
+        "command": "okucode.openNewTerminal",
+        "key": "ctrl+shift+escape",
+        "mac": "cmd+shift+escape"
       },
       {
-        "command": "opencode.addFilepathToTerminal",
-        "title": "opencode: Insert At-Mentioned",
-        "key": "cmd+alt+k",
-        "mac": "cmd+alt+k",
-        "win": "ctrl+alt+K",
-        "linux": "ctrl+alt+K"
+        "command": "okucode.addFilepathToTerminal",
+        "key": "ctrl+alt+k",
+        "mac": "cmd+alt+k"
       }
-    ]
+    ],
+    "configuration": {
+      "title": "OkuCode",
+      "properties": {
+        "okucode.command": {
+          "type": "string",
+          "default": "okucode",
+          "description": "Command that starts OkuCode (use the full path if VS Code cannot find it, e.g. /Users/you/Projects/okucode-cli/bin/okucode)."
+        },
+        "okucode.port": {
+          "type": "number",
+          "default": 4096,
+          "description": "Port of the OkuCode chat page (okucode web)."
+        }
+      }
+    }
   },
   "scripts": {
     "vscode:prepublish": "bun run package",
