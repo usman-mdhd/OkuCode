@@ -148,7 +148,7 @@ export const Plugin = {
           name,
           options: { codemode: false, permission: "edit" },
           description:
-            "Creates a document file the user can open in Word or other apps: Word (.docx), PDF (.pdf), web page (.html), OpenDocument (.odt), Rich Text (.rtf), PowerPoint (.pptx), Markdown (.md) or text (.txt).\n\nUse this tool whenever the user asks for a Word file, docx, document, report, letter or PDF. Write the whole document as Markdown in `content` (headings, paragraphs, bold, bullet and numbered lists, tables, code blocks); the tool turns it into the requested file type based on the extension in `path`.\n\nTo add something to a document you already made (for example \"add Python examples to the same document\"), call this tool again with the same `path`, `append: true` and only the new Markdown.\n\nTo change an existing Word file (fix mistakes, rewrite a part, translate, shorten): first read it with the read tool (it shows the document as Markdown), then call this tool with the same `path` and the complete corrected Markdown. Never use the edit or write tools on .docx files. The user's original file is kept as a backup. The chat shows the user a Download button for the file.",
+            "Creates a document file the user can open in Word or other apps: Word (.docx), PDF (.pdf), web page (.html), OpenDocument (.odt), Rich Text (.rtf), PowerPoint (.pptx), Markdown (.md) or text (.txt).\n\nUse this tool whenever the user asks for a Word file, docx, document, report, letter or PDF. Write the whole document as Markdown in `content` (headings, paragraphs, bold, bullet and numbered lists, tables, code blocks); the tool turns it into the requested file type based on the extension in `path`.\n\nTo add something to a document you already made (for example \"add Python examples to the same document\"), call this tool again with the same `path`, `append: true` and only the new Markdown. With `append: true`, a section whose heading already exists replaces that section, so to change one section send just that heading and its new text.\n\nTo change an existing Word file (fix mistakes, rewrite a part, translate, shorten): first read it with the read tool (it shows the document as Markdown), then call this tool with the same `path` and the complete corrected Markdown. Never use the edit or write tools on .docx files. The user's original file is kept as a backup. The chat shows the user a Download button for the file.",
           input: Input,
           output: Output,
           execute: (input, context) =>
@@ -178,7 +178,7 @@ export const Plugin = {
                       ? { markdown: OkuDocxRead.readFile(target.absolute) }
                       : undefined)
                   if (existing) sources.backup(target.absolute)
-                  const markdown = input.append && previous ? `${previous.markdown.trimEnd()}\n\n${input.content}` : input.content
+                  const markdown = input.append && previous ? OkuDocument.merge(previous.markdown, input.content) : input.content
                   const title = input.title ?? (input.append ? previous?.title : undefined)
                   const bytes = render(input.path, markdown, title)
                   sources.write(target.absolute, { markdown, title })

@@ -34,12 +34,50 @@ export function inline(source: string): Inline[] {
   return out.map((part) => ({ ...part, text: part.text.replace(/\[([^\]]+)\]\(([^)]+)\)/g, "$1 ($2)") }))
 }
 
+// "\|" is a literal | inside a cell, not a column break.
 const cells = (line: string) =>
   line
     .trim()
-    .replace(/^\||\|$/g, "")
-    .split("|")
-    .map((cell) => inline(cell.trim()))
+    .replace(/^\||(?<!\\)\|$/g, "")
+    .split(/(?<!\\)\|/)
+    .map((cell) => inline(cell.trim().replace(/\\\|/g, "|")))
+
+/**
+ * Adds `addition` to `markdown`. A section in `addition` whose heading already exists (same level and text)
+ * replaces that section instead of being added a second time; everything else is added at the end.
+ */
+export function merge(markdown: string, addition: string): string {
+  type Section = { key?: string; level: number; lines: string[] }
+  const split = (source: string) => {
+    const sections: Section[] = [{ level: 0, lines: [] }]
+    let fence = false
+    for (const line of source.replace(/\r\n?/g, "\n").split("\n")) {
+      if (line.trim().startsWith("```")) fence = !fence
+      const heading = fence ? null : line.match(/^(#{1,6})\s+(.+?)\s*#*\s*$/)
+      if (heading) sections.push({ key: `${heading[1]!.length}:${heading[2]!.toLowerCase()}`, level: heading[1]!.length, lines: [line] })
+      else sections[sections.length - 1]!.lines.push(line)
+    }
+    return sections
+  }
+  const base = split(markdown)
+  const extra = split(addition)
+  const tail: string[] = []
+  for (const section of extra) {
+    const text = section.lines.join("\n").trim()
+    if (!text) continue
+    const index = section.key ? base.findIndex((item) => item.key === section.key) : -1
+    if (index < 0) {
+      tail.push(text)
+      continue
+    }
+    // The replaced section ends where the next heading of the same or a higher level starts.
+    let end = index + 1
+    while (end < base.length && base[end]!.level > base[index]!.level) end++
+    base.splice(index, end - index, { key: section.key, level: section.level, lines: [text, ""] })
+  }
+  const merged = base.map((section) => section.lines.join("\n").trim()).filter(Boolean)
+  return [...merged, ...tail].join("\n\n") + "\n"
+}
 
 /** Small Markdown block parser, enough for documents written by a model. */
 export function parse(markdown: string): Block[] {

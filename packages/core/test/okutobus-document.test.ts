@@ -45,3 +45,19 @@ describe("Okutobus built-in PDF", () => {
     expect(DocumentTool.render("a.pdf", "# Hi")).toBeInstanceOf(Uint8Array)
   })
 })
+
+describe("OkuDocument.merge and tables", () => {
+  test("a section with an existing heading replaces it", () => {
+    const base = "# Report\n\nIntro.\n\n## Next steps\n\nShip the Word plugin.\n\n## Team\n\nUsman."
+    expect(OkuDocument.merge(base, "## Next steps\n\nWe will ship it this week.")).toBe(
+      "# Report\n\nIntro.\n\n## Next steps\n\nWe will ship it this week.\n\n## Team\n\nUsman.\n",
+    )
+    expect(OkuDocument.merge(base, "## Budget\n\nSmall.")).toContain("## Team\n\nUsman.\n\n## Budget\n\nSmall.")
+  })
+
+  test("\\| stays inside a table cell", () => {
+    const [table] = OkuDocument.parse("| Name | Role |\n| --- | --- |\n| Usman | Dev \\| Ops |")
+    if (table?.type !== "table") throw new Error("expected a table")
+    expect(table.rows[0]!.map((cell) => cell.map((part) => part.text).join(""))).toEqual(["Usman", "Dev | Ops"])
+  })
+})
