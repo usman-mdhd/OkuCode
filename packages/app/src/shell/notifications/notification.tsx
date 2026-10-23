@@ -224,7 +224,8 @@ export function createServerNotificationState(input: {
 
       if (session.parentID) return
 
-      const hasOpenTab = sessionIDHasOpenTab(tabs.store, input.key, sessionID)
+      // Okutobus (OkuCode): the web UI has no tab strip, so every finished chat counts, not only ones open in a tab.
+      const hasOpenTab = platform.platform === "web" || sessionIDHasOpenTab(tabs.store, input.key, sessionID)
 
       if (hasOpenTab && settings.sounds.agentEnabled()) {
         void input.coordinator.sound(`${input.key}\0${eventID}`, () => playSoundById(settings.sounds.agent()))
@@ -246,7 +247,8 @@ export function createServerNotificationState(input: {
 
       if (session?.parentID) return
 
-      const hasOpenTab = sessionIDHasOpenTab(tabs.store, input.key, sessionID)
+      // Okutobus (OkuCode): the web UI has no tab strip, so every finished chat counts, not only ones open in a tab.
+      const hasOpenTab = platform.platform === "web" || sessionIDHasOpenTab(tabs.store, input.key, sessionID)
 
       if (hasOpenTab && settings.sounds.errorsEnabled()) {
         void input.coordinator.sound(`${input.key}\0${eventID}`, () => playSoundById(settings.sounds.errors()))

@@ -1,7 +1,21 @@
 import { createBrowserDraftStore } from "@/runtime/persistence/drafts"
 import type { Platform } from "./platform"
 
+// Okutobus (OkuCode): Safari and Chrome only show the "Allow notifications?" prompt when it is asked from a
+// click or key press, so ask once on the first one instead of when a reply finishes.
+function askNotificationPermissionOnFirstInput() {
+  if (typeof window === "undefined" || !("Notification" in window) || Notification.permission !== "default") return
+  const ask = () => {
+    window.removeEventListener("pointerdown", ask, true)
+    window.removeEventListener("keydown", ask, true)
+    if (Notification.permission === "default") void Notification.requestPermission().catch(() => undefined)
+  }
+  window.addEventListener("pointerdown", ask, true)
+  window.addEventListener("keydown", ask, true)
+}
+
 export function createWebPlatform(version: string) {
+  askNotificationPermissionOnFirstInput()
   const platform: Platform = {
     platform: "web",
     draftStore: createBrowserDraftStore(),
@@ -17,18 +31,14 @@ export function createWebPlatform(version: string) {
     async notify(title, description, onClick) {
       if (!("Notification" in window)) return
 
-      const permission =
-        Notification.permission === "default"
-          ? await Notification.requestPermission().catch(() => "denied")
-          : Notification.permission
-
-      if (permission !== "granted") return
+      if (Notification.permission !== "granted") return
 
       if (document.visibilityState === "visible" && document.hasFocus()) return
 
       const notification = new Notification(title, {
         body: description ?? "",
-        icon: "https://opencode.ai/favicon-96x96-v3.png",
+        icon: `${location.origin}/favicon-96x96-v3.png`,
+        tag: title + (description ?? ""),
       })
 
       notification.onclick = () => {
