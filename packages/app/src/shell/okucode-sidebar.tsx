@@ -41,7 +41,6 @@ const ICONS = {
   panel: "M2.5 3h11v10h-11zM6 3v10",
   menu: "M2.5 4.5h11M2.5 8h11M2.5 11.5h11",
   search: "M7 12A5 5 0 1 0 7 2a5 5 0 0 0 0 10Zm7 2-3.5-3.5",
-  bell: "M4 11V7a4 4 0 0 1 8 0v4l1 1.5H3L4 11Zm2.5 2.5a1.5 1.5 0 0 0 3 0",
   help: "M8 14.5A6.5 6.5 0 1 0 8 1.5a6.5 6.5 0 0 0 0 13ZM6.2 6.2a1.9 1.9 0 0 1 3.6.7c0 1.3-1.8 1.6-1.8 2.8M8 11.6h.01",
 }
 
@@ -71,25 +70,6 @@ export function OkuCodeSidebar() {
   const [collapsed, setCollapsed] = createSignal(readCollapsed())
   const [menuOpen, setMenuOpen] = createSignal(false)
   const [query, setQuery] = createSignal("")
-  const [testLabel, setTestLabel] = createSignal("Test notifications")
-
-  // Shows a sample notification after 5 seconds, so you can switch to another app and check that it arrives.
-  const testNotification = async () => {
-    if (!("Notification" in window)) return setTestLabel("This browser has no notifications")
-    const permission =
-      Notification.permission === "default" ? await Notification.requestPermission().catch(() => "denied") : Notification.permission
-    if (permission !== "granted") return setTestLabel("Blocked: allow 127.0.0.1 in Safari Settings → Websites")
-    setTestLabel("Switch to another app now…")
-    setTimeout(() => {
-      try {
-        new Notification("OkuCode", { body: "Notifications are working.", icon: `${window.location.origin}/favicon-96x96-v3.png` })
-        setTestLabel("Sent — did you see it?")
-      } catch {
-        setTestLabel("This browser could not show it")
-      }
-      setTimeout(() => setTestLabel("Test notifications"), 6000)
-    }, 5000)
-  }
 
   const toggle = () => {
     const next = !collapsed()
@@ -218,10 +198,6 @@ export function OkuCodeSidebar() {
             <button type="button" class={row} onClick={() => openSettings()}>
               <Icon path={ICONS.settings} />
               Settings
-            </button>
-            <button type="button" class={row} onClick={() => void testNotification()}>
-              <Icon path={ICONS.bell} />
-              <span class="truncate">{testLabel()}</span>
             </button>
             <button type="button" class={row} onClick={() => platform.openExternal("https://okutobus.com")}>
               <Icon path={ICONS.help} />
