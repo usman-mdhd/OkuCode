@@ -8,6 +8,7 @@ export * as OkuMentions from "./mentions.js"
 import { statSync } from "node:fs"
 import path from "node:path"
 import { pathToFileURL } from "node:url"
+import { OkuDocxRead } from "./docx-read.js"
 
 export const MAX_FILES = 4
 export const MAX_BYTES = 60 * 1024
@@ -64,17 +65,35 @@ export function attachments(
     const absolute = path.resolve(root, item.file)
     if (absolute !== root && !absolute.startsWith(root + path.sep)) continue
     if (already.has(absolute)) continue
+    const name = path.relative(root, absolute)
+    const word = OkuDocxRead.READABLE.has(path.extname(absolute).toLowerCase())
     let size: number
     try {
       const info = statSync(absolute)
-      if (!info.isFile() || info.size > MAX_BYTES) continue
+      if (!info.isFile() || info.size > (word ? 20 * MAX_BYTES : MAX_BYTES)) continue
       size = info.size
     } catch {
       continue
     }
+    if (word) {
+      // Word files are sent as Markdown text.
+      let text: string
+      try {
+        text = OkuDocxRead.readFile(absolute)
+      } catch {
+        continue
+      }
+      if (Buffer.byteLength(text) > MAX_BYTES) continue
+      already.add(absolute)
+      result.push({
+        uri: `data:text/plain;base64,${Buffer.from(text || " ").toString("base64")}`,
+        name,
+        description: `The Word document ${name}, shown as Markdown. To change it, call the document tool with path "${name}" and the complete corrected Markdown.`,
+      })
+      continue
+    }
     already.add(absolute)
     const url = pathToFileURL(absolute)
-    const name = path.relative(root, absolute)
     if (item.start === undefined) {
       result.push({ uri: url.href, name, description: "The whole file." })
       continue

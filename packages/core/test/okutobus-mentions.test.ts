@@ -3,6 +3,7 @@ import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import path from "node:path"
 import { pathToFileURL } from "node:url"
+import { OkuDocument } from "../src/okutobus/document"
 import { OkuMentions } from "../src/okutobus/mentions"
 
 describe("OkuMentions.parse", () => {
@@ -47,6 +48,14 @@ describe("OkuMentions.attachments", () => {
     expect(item!.name).toBe("long.py (lines 5-11)")
     expect(new URL(item!.uri).searchParams.get("start")).toBe("5")
     expect(item!.description).toContain("never write the whole file")
+  })
+
+  test("sends Word files as Markdown", () => {
+    writeFileSync(path.join(dir, "report.docx"), OkuDocument.docx("# Plan\n\nShip it."))
+    const [item] = OkuMentions.attachments("fix the typos in report.docx", dir)
+    expect(item!.name).toBe("report.docx")
+    expect(Buffer.from(item!.uri.split(",")[1]!, "base64").toString()).toBe("# Plan\n\nShip it.\n")
+    expect(item!.description).toContain("document tool")
   })
 
   test("skips missing, too big, outside and already attached files", () => {

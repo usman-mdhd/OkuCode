@@ -8,13 +8,14 @@ export * as DocumentTool from "./document.js"
 import type { Context } from "@opencode/plugin/effect/plugin"
 import { ToolFailure } from "@opencode/ai"
 import { spawnSync } from "node:child_process"
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { basename, dirname, extname, join } from "node:path"
 import { Effect, Schema } from "effect"
 import { FileAccess } from "../../file-access.js"
 import { FileMutation } from "../../file-mutation.js"
 import { OkuDocument } from "../../okutobus/document.js"
+import { OkuDocxRead } from "../../okutobus/docx-read.js"
 import { OkuPdf } from "../../okutobus/pdf.js"
 import { Permission } from "../../permission.js"
 import { fileDiff } from "./file-diff.js"
@@ -95,6 +96,25 @@ export const sources = {
       return undefined
     }
   },
+  /** False when the document was changed outside OkuCode (e.g. in Word) after its hidden copy was saved. */
+  fresh(absolute: string) {
+    try {
+      return statSync(sources.file(absolute)).mtimeMs + 2000 >= statSync(absolute).mtimeMs
+    } catch {
+      return true
+    }
+  },
+  /** Keeps the user's original file once, before OkuCode first replaces a document it did not make. */
+  backup(absolute: string) {
+    try {
+      const copy = join(dirname(absolute), ".okucode", "documents", `original-${basename(absolute)}`)
+      if (existsSync(copy)) return
+      mkdirSync(dirname(copy), { recursive: true })
+      copyFileSync(absolute, copy)
+    } catch {
+      // Without a backup the change still happens.
+    }
+  },
   write(absolute: string, value: { markdown: string; title?: string }) {
     try {
       mkdirSync(dirname(sources.file(absolute)), { recursive: true })
@@ -128,7 +148,7 @@ export const Plugin = {
           name,
           options: { codemode: false, permission: "edit" },
           description:
-            "Creates a document file the user can open in Word or other apps: Word (.docx), PDF (.pdf), web page (.html), OpenDocument (.odt), Rich Text (.rtf), PowerPoint (.pptx), Markdown (.md) or text (.txt).\n\nUse this tool whenever the user asks for a Word file, docx, document, report, letter or PDF. Write the whole document as Markdown in `content` (headings, paragraphs, bold, bullet and numbered lists, tables, code blocks); the tool turns it into the requested file type based on the extension in `path`.\n\nTo add something to a document you already made (for example \"add Python examples to the same document\"), call this tool again with the same `path`, `append: true` and only the new Markdown. The chat shows the user a Download button for the file.",
+            "Creates a document file the user can open in Word or other apps: Word (.docx), PDF (.pdf), web page (.html), OpenDocument (.odt), Rich Text (.rtf), PowerPoint (.pptx), Markdown (.md) or text (.txt).\n\nUse this tool whenever the user asks for a Word file, docx, document, report, letter or PDF. Write the whole document as Markdown in `content` (headings, paragraphs, bold, bullet and numbered lists, tables, code blocks); the tool turns it into the requested file type based on the extension in `path`.\n\nTo add something to a document you already made (for example \"add Python examples to the same document\"), call this tool again with the same `path`, `append: true` and only the new Markdown.\n\nTo change an existing Word file (fix mistakes, rewrite a part, translate, shorten): first read it with the read tool (it shows the document as Markdown), then call this tool with the same `path` and the complete corrected Markdown. Never use the edit or write tools on .docx files. The user's original file is kept as a backup. The chat shows the user a Download button for the file.",
           input: Input,
           output: Output,
           execute: (input, context) =>
@@ -149,7 +169,15 @@ export const Plugin = {
               const content = yield* Effect.try({
                 try: () => {
                   // The Markdown source of each document is kept next to it (hidden) so it can be extended later.
-                  const previous = sources.read(target.absolute)
+                  const made = sources.fresh(target.absolute) ? sources.read(target.absolute) : undefined
+                  const existing = !made && existsSync(target.absolute)
+                  // A Word file the user made (not OkuCode): read its text so `append` keeps it, and keep the original.
+                  const previous =
+                    made ??
+                    (existing && OkuDocxRead.READABLE.has(extname(target.absolute).toLowerCase())
+                      ? { markdown: OkuDocxRead.readFile(target.absolute) }
+                      : undefined)
+                  if (existing) sources.backup(target.absolute)
                   const markdown = input.append && previous ? `${previous.markdown.trimEnd()}\n\n${input.content}` : input.content
                   const title = input.title ?? (input.append ? previous?.title : undefined)
                   const bytes = render(input.path, markdown, title)

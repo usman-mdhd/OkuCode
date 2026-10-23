@@ -11,6 +11,9 @@ import { SessionInstructions } from "../../session/instructions.js"
 import { AbsolutePath } from "../../schema.js"
 import { ReadToolFileSystem } from "../read-filesystem.js"
 import { Environment } from "../../environment/index.js"
+import { extname } from "path"
+import { pathToFileURL } from "url"
+import { OkuDocxRead } from "../../okutobus/docx-read.js"
 
 export const name = "read"
 const FILENAME = "AGENTS.md"
@@ -53,6 +56,25 @@ export const Plugin = {
                 })
 
               const requested = yield* access.authorizeRead(input.path, context)
+              // Okutobus (OkuCode): Word files are read as Markdown text instead of failing as binary files.
+              if (OkuDocxRead.READABLE.has(extname(requested.absolute).toLowerCase())) {
+                const markdown = yield* Effect.try({
+                  try: () => OkuDocxRead.readFile(requested.absolute),
+                  catch: (error) =>
+                    new ToolFailure({ message: error instanceof Error ? `Unable to read ${input.path}: ${error.message}` : `Unable to read ${input.path}` }),
+                })
+                return {
+                  output: {
+                    type: "file" as const,
+                    uri: pathToFileURL(requested.absolute).href,
+                    name: basename(requested.absolute),
+                    content: markdown,
+                    encoding: "utf8" as const,
+                    mime: "text/markdown",
+                  },
+                  path: input.path,
+                }
+              }
               const result = yield* read(requested).pipe(
                 Effect.map((content) => ({ content, target: requested, path: input.path })),
                 Effect.catchIf(
