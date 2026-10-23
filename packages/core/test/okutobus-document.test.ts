@@ -33,3 +33,15 @@ describe("Okutobus document files", () => {
     expect(() => DocumentTool.render("a.xyz", "Hi")).toThrow(/Unsupported/)
   })
 })
+
+describe("Okutobus built-in PDF", () => {
+  test("writes a valid PDF without extra software", async () => {
+    const { OkuPdf } = await import("@opencode/core/okutobus/pdf")
+    const bytes = OkuPdf.pdf("# Hi\n\n- a\n- b\n\n| A | B |\n|---|---|\n| 1 | 2 |", "Report")
+    const text = new TextDecoder("latin1").decode(bytes)
+    expect(text.startsWith("%PDF-1.4")).toBe(true)
+    expect(text).toContain("/BaseFont /Helvetica")
+    expect(text.trimEnd().endsWith("%%EOF")).toBe(true)
+    expect(DocumentTool.render("a.pdf", "# Hi")).toBeInstanceOf(Uint8Array)
+  })
+})

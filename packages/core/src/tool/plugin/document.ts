@@ -1,6 +1,6 @@
 /**
  * Okutobus (OkuCode): model-facing "document" tool. Creates Word (.docx), PDF, HTML and other
- * document files from Markdown. .docx/.html/.md/.txt need no extra software; .pdf/.odt/.rtf/
+ * document files from Markdown. .docx/.pdf/.html/.md/.txt need no extra software; .odt/.rtf/
  * .pptx/.epub use pandoc or LibreOffice when installed. Same approvals as the write tool.
  */
 export * as DocumentTool from "./document.js"
@@ -15,6 +15,7 @@ import { Effect, Schema } from "effect"
 import { FileAccess } from "../../file-access.js"
 import { FileMutation } from "../../file-mutation.js"
 import { OkuDocument } from "../../okutobus/document.js"
+import { OkuPdf } from "../../okutobus/pdf.js"
 import { Permission } from "../../permission.js"
 import { fileDiff } from "./file-diff.js"
 
@@ -108,6 +109,7 @@ export function render(path: string, markdown: string, title?: string): Uint8Arr
   const extension = extname(path).toLowerCase()
   if (extension === ".docx") return OkuDocument.docx(markdown, title)
   if (extension === ".html" || extension === ".htm") return OkuDocument.html(markdown, title)
+  if (extension === ".pdf") return OkuPdf.pdf(markdown, title)
   if (BUILT_IN.has(extension)) return title ? `# ${title}\n\n${markdown}` : markdown
   if (CONVERTED.has(extension)) return convert(markdown, title, extension)
   throw new Error(`Unsupported document type "${extension || basename(path)}". Use .docx, .pdf, .html, .odt, .rtf, .doc, .pptx, .md or .txt.`)
