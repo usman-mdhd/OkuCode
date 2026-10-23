@@ -33,12 +33,12 @@ export function createWebPlatform(version: string) {
 
       if (Notification.permission !== "granted") return
 
-      if (document.visibilityState === "visible" && document.hasFocus()) return
+      if (!document.hidden && document.visibilityState === "visible" && document.hasFocus()) return
 
       const notification = new Notification(title, {
         body: description ?? "",
         icon: `${location.origin}/favicon-96x96-v3.png`,
-        tag: title + (description ?? ""),
+        tag: `okucode:${title}:${description ?? ""}`,
       })
 
       notification.onclick = () => {

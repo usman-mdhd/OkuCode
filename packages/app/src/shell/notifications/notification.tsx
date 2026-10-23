@@ -216,6 +216,11 @@ export function createServerNotificationState(input: {
       .catch(() => undefined)
   }
 
+  // Okutobus (OkuCode): in the browser, notify directly. The cross-window focus lock can wrongly count a hidden
+  // Safari tab as focused and drop the notification; the notification tag already stops duplicates.
+  const system = (id: string, run: () => Promise<unknown> | void) =>
+    platform.platform === "web" ? Promise.resolve(run()) : input.coordinator.system(id, run)
+
   const handleSessionIdle = (sessionID: string, eventID: string) => {
     void lookup(sessionID).then((session) => {
       if (disposed.value) return
@@ -232,7 +237,7 @@ export function createServerNotificationState(input: {
       }
 
       if (hasOpenTab && settings.notifications.agent()) {
-        void input.coordinator.system(`${input.key}\0${eventID}`, () =>
+        void system(`${input.key}\0${eventID}`, () =>
           platform.notify(language.t("notification.session.responseReady.title"), session.title ?? sessionID, () =>
             openNotificationSession(tabs, input.key, sessionID),
           ),
@@ -257,7 +262,7 @@ export function createServerNotificationState(input: {
       const description = session?.title ?? language.t("notification.session.error.fallbackDescription")
 
       if (hasOpenTab && settings.notifications.errors()) {
-        void input.coordinator.system(`${input.key}\0${eventID}`, () =>
+        void system(`${input.key}\0${eventID}`, () =>
           platform.notify(language.t("notification.session.error.title"), description, () =>
             openNotificationSession(tabs, input.key, sessionID),
           ),
