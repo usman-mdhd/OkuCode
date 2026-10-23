@@ -46,6 +46,29 @@ const cells = (line: string) =>
  * Adds `addition` to `markdown`. A section in `addition` whose heading already exists (same level and text)
  * replaces that section instead of being added a second time; everything else is added at the end.
  */
+const headings = (source: string) => {
+  const keys: string[] = []
+  let fence = false
+  for (const line of source.replace(/\r\n?/g, "\n").split("\n")) {
+    if (line.trim().startsWith("```")) fence = !fence
+    const heading = fence ? null : line.match(/^(#{1,6})\s+(.+?)\s*#*\s*$/)
+    if (heading) keys.push(`${heading[1]!.length}:${heading[2]!.toLowerCase()}`)
+  }
+  return keys
+}
+
+/**
+ * True when `content` looks like only some sections of `previous` (every heading it has already exists there,
+ * and some of the old headings are missing). Small models often send just the changed section without `append`;
+ * replacing the file with it would delete the rest of the document.
+ */
+export function isPartial(previous: string, content: string): boolean {
+  const old = new Set(headings(previous))
+  const next = headings(content)
+  if (!next.length || !old.size) return false
+  return next.every((key) => old.has(key)) && [...old].some((key) => !next.includes(key))
+}
+
 export function merge(markdown: string, addition: string): string {
   type Section = { key?: string; level: number; lines: string[] }
   const split = (source: string) => {

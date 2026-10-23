@@ -178,7 +178,10 @@ export const Plugin = {
                       ? { markdown: OkuDocxRead.readFile(target.absolute) }
                       : undefined)
                   if (existing) sources.backup(target.absolute)
-                  const markdown = input.append && previous ? OkuDocument.merge(previous.markdown, input.content) : input.content
+                  const markdown =
+                    previous && (input.append || OkuDocument.isPartial(previous.markdown, input.content))
+                      ? OkuDocument.merge(previous.markdown, input.content)
+                      : input.content
                   const title = input.title ?? (input.append ? previous?.title : undefined)
                   const bytes = render(input.path, markdown, title)
                   sources.write(target.absolute, { markdown, title })

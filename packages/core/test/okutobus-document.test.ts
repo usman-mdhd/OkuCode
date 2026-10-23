@@ -55,6 +55,14 @@ describe("OkuDocument.merge and tables", () => {
     expect(OkuDocument.merge(base, "## Budget\n\nSmall.")).toContain("## Team\n\nUsman.\n\n## Budget\n\nSmall.")
   })
 
+  test("only some sections sent without append counts as a partial change", () => {
+    const base = "# Report\n\nIntro.\n\n## Next steps\n\nShip it.\n\n## Team\n\nUsman."
+    expect(OkuDocument.isPartial(base, "## Next steps\n\nShip it this week.")).toBe(true)
+    expect(OkuDocument.isPartial(base, "# Report\n\nNew.\n\n## Next steps\n\nA.\n\n## Team\n\nB.")).toBe(false)
+    expect(OkuDocument.isPartial(base, "# Other\n\nBrand new document.")).toBe(false)
+    expect(OkuDocument.isPartial(base, "Just text.")).toBe(false)
+  })
+
   test("\\| stays inside a table cell", () => {
     const [table] = OkuDocument.parse("| Name | Role |\n| --- | --- |\n| Usman | Dev \\| Ops |")
     if (table?.type !== "table") throw new Error("expected a table")
