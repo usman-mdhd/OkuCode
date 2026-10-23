@@ -12,6 +12,7 @@ import { fileURLToPath } from "url"
 import { Image } from "../image.js"
 import { Instance } from "../instance/service.js"
 import { Mime } from "../mime.js"
+import { OkuMentions } from "../okutobus/mentions.js"
 import { Plugin } from "../plugin/service.js"
 import { PluginHooks } from "../plugin/hooks.js"
 import { Skill } from "../skill.js"
@@ -50,9 +51,24 @@ export const prepare = Effect.fn("SessionPrompt.prepare")(function* (request: {
       delivery: request.input.delivery ?? "steer",
     })
     const input = event.prompt
-    const files = input.files
+    const given = input.files
       ? yield* Effect.forEach(input.files, materializeAttachment, { concurrency: 8 })
       : undefined
+    // Okutobus (OkuCode): attach text files the message names, so the model sees the code without asking for it.
+    const mentioned = yield* Effect.forEach(
+      OkuMentions.attachments(
+        input.text,
+        request.session.location.directory,
+        (input.files ?? []).map((file) => file.uri),
+      ),
+      (file) =>
+        materializeAttachment(file).pipe(
+          Effect.map((attachment) => (attachment.mime === "text/plain" ? attachment : undefined)),
+          Effect.catch(() => Effect.succeed(undefined)),
+        ),
+      { concurrency: 4 },
+    ).pipe(Effect.map((list) => list.filter((file): file is FileAttachment => file !== undefined)))
+    const files = given || mentioned.length ? [...(given ?? []), ...mentioned] : undefined
     const requested = input.skills
     const selected = yield* Effect.gen(function* () {
       if (!requested?.length) return undefined
