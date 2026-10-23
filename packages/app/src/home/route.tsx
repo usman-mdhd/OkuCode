@@ -42,7 +42,7 @@ export function Home() {
       >
         {/* Okutobus: greeting + message box. On wide screens projects and chats live in the sidebar. */}
         <div class="flex min-h-full flex-col justify-center px-3 lg:px-6" classList={{ "min-h-full": !mobile(), "pb-[8vh]": !mobile() }}>
-          <HomeHero home={home} />
+          <HomeHero home={home} projects={projects} />
         </div>
         <Show when={mobile()}>
         <div

@@ -5,6 +5,9 @@ import { Mark } from "@opencode/ui/logo"
 import { ServerConnection } from "@/runtime/server/registry"
 import { useTabs } from "@/shell/tabs/tabs"
 import type { HomeController } from "./model"
+import type { createHomeProjectsController } from "./projects/controller"
+
+type HomeProjectsController = ReturnType<typeof createHomeProjectsController>
 import { autoSend } from "@/new-session/auto-send"
 import { userName } from "./user-name"
 
@@ -31,10 +34,17 @@ export function folderName(path: string) {
   return path.replace(/[\\/]+$/, "").split(/[\\/]/).pop() || path
 }
 
-export function HomeHero(props: { home: HomeController }) {
+export function HomeHero(props: { home: HomeController; projects: HomeProjectsController }) {
   const tabs = useTabs()
   const [text, setText] = createSignal("")
   const [picked, setPicked] = createSignal<string>()
+  const [menuOpen, setMenuOpen] = createSignal(false)
+  let menuRoot: HTMLDivElement | undefined
+  const closeMenu = (event: MouseEvent) => {
+    if (menuOpen() && menuRoot && !menuRoot.contains(event.target as Node)) setMenuOpen(false)
+  }
+  document.addEventListener("mousedown", closeMenu)
+  onCleanup(() => document.removeEventListener("mousedown", closeMenu))
   const [sending, setSending] = createSignal(false)
   let input: HTMLTextAreaElement | undefined
 
@@ -150,42 +160,71 @@ export function HomeHero(props: { home: HomeController }) {
           }}
         />
         <div class="mt-3 flex items-center gap-2">
-          <Show when={directory()}>
-            {(dir) => (
-              <label
-                class="relative flex min-w-0 max-w-[60%] cursor-pointer items-center gap-1.5 rounded-full border border-v2-border-border-muted px-3 py-1 text-[12.5px] text-v2-text-text-muted hover:border-v2-border-border-strong hover:text-v2-text-text-base"
-                title={dir()}
+          {/* Folder for this chat: click to pick another project or open any folder. */}
+          <div class="relative" ref={menuRoot}>
+            <button
+              type="button"
+              aria-label="Choose the folder for this chat"
+              aria-expanded={menuOpen()}
+              title={directory() ?? "Choose a folder"}
+              onClick={() => setMenuOpen(!menuOpen())}
+              class="flex min-w-0 max-w-[280px] items-center gap-1.5 rounded-full border border-v2-border-border-muted px-3 py-1 text-[12.5px] text-v2-text-text-muted hover:border-v2-border-border-strong hover:text-v2-text-text-base"
+            >
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true" class="shrink-0">
+                <path
+                  d="M2 4.5A1.5 1.5 0 0 1 3.5 3h3l1.5 1.5h4.5A1.5 1.5 0 0 1 14 6v5.5A1.5 1.5 0 0 1 12.5 13h-9A1.5 1.5 0 0 1 2 11.5v-7Z"
+                  stroke="currentColor"
+                  stroke-width="1.4"
+                  stroke-linejoin="round"
+                />
+              </svg>
+              <span class="truncate">{directory() ? folderName(directory() ?? "") : "Choose a folder"}</span>
+              <svg width="10" height="10" viewBox="0 0 10 10" fill="none" aria-hidden="true" class="shrink-0">
+                <path d="M2.5 4l2.5 2.5L7.5 4" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" />
+              </svg>
+            </button>
+            <Show when={menuOpen()}>
+              <div
+                role="menu"
+                class="absolute left-0 top-full z-50 mt-2 w-64 rounded-xl border border-v2-border-border-muted bg-v2-background-bg-base p-1 shadow-[var(--v2-elevation-raised)]"
               >
-                <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true" class="shrink-0">
-                  <path
-                    d="M2 4.5A1.5 1.5 0 0 1 3.5 3h3l1.5 1.5h4.5A1.5 1.5 0 0 1 14 6v5.5A1.5 1.5 0 0 1 12.5 13h-9A1.5 1.5 0 0 1 2 11.5v-7Z"
-                    stroke="currentColor"
-                    stroke-width="1.4"
-                    stroke-linejoin="round"
-                  />
-                </svg>
-                <span class="truncate">{folderName(dir())}</span>
-                <Show when={projects().length > 1}>
-                  <svg width="10" height="10" viewBox="0 0 10 10" fill="none" aria-hidden="true" class="shrink-0">
-                    <path d="M2.5 4l2.5 2.5L7.5 4" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" />
-                  </svg>
-                  <select
-                    aria-label="Project folder for this chat"
-                    class="absolute inset-0 cursor-pointer opacity-0"
-                    onChange={(event) => setPicked(event.currentTarget.value)}
-                  >
-                    <For each={projects()}>
-                      {(project) => (
-                        <option value={project.worktree} selected={project.worktree === dir()}>
-                          {folderName(project.worktree)}
-                        </option>
-                      )}
-                    </For>
-                  </select>
-                </Show>
-              </label>
-            )}
-          </Show>
+                <div class="px-2.5 pb-1 pt-1.5 text-[11.5px] font-medium text-v2-text-text-faint">Chat in folder</div>
+                <For each={projects()} fallback={<div class="px-2.5 py-1.5 text-[13px] text-v2-text-text-faint">No projects yet</div>}>
+                  {(project) => (
+                    <button
+                      type="button"
+                      role="menuitem"
+                      title={project.worktree}
+                      onClick={() => {
+                        setPicked(project.worktree)
+                        setMenuOpen(false)
+                        input?.focus()
+                      }}
+                      class="flex w-full items-center justify-between gap-2 rounded-lg px-2.5 py-1.5 text-left text-[13.5px] text-v2-text-text-base hover:bg-v2-background-bg-layer-02"
+                    >
+                      <span class="truncate">{folderName(project.worktree)}</span>
+                      <Show when={project.worktree === directory()}>
+                        <span class="text-[12px] text-v2-text-text-faint">✓</span>
+                      </Show>
+                    </button>
+                  )}
+                </For>
+                <div class="my-1 border-t border-v2-border-border-muted" />
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={() => {
+                    setMenuOpen(false)
+                    const conn = props.home.server.focused()
+                    if (conn) props.projects.project.choose(conn)
+                  }}
+                  class="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-[13.5px] text-v2-text-text-base hover:bg-v2-background-bg-layer-02"
+                >
+                  + Open another folder…
+                </button>
+              </div>
+            </Show>
+          </div>
           <div class="flex-1" />
           <button
             type="button"
