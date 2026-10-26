@@ -49,6 +49,24 @@ const clearAuthToken = () => {
   history.replaceState(null, "", location.pathname + (params.size ? `?${params}` : "") + location.hash)
 }
 
+// Okutobus (OkuCode): /okucode/... pages (admin panel, Google sign-in) belong to the server. If an older saved copy of
+// the app opened one, remove that saved copy and load the page from the server.
+if (location.pathname.startsWith("/okucode/") && "serviceWorker" in navigator) {
+  const key = "okucode.sw-reset"
+  let tried = false
+  try {
+    tried = sessionStorage.getItem(key) === location.pathname
+    sessionStorage.setItem(key, location.pathname)
+  } catch {
+    tried = false
+  }
+  if (!tried)
+    void navigator.serviceWorker
+      .getRegistrations()
+      .then((all) => Promise.all(all.map((registration) => registration.unregister())))
+      .finally(() => location.reload())
+}
+
 const web = createWebPlatform(pkg.version)
 
 if (import.meta.env.PROD && "serviceWorker" in navigator) {
