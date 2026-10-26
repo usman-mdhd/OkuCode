@@ -1,5 +1,6 @@
 export * as Permission from "./permission.js"
 
+import { OkuProtect } from "./okutobus/protect.js"
 import { makeLocationNode } from "@opencode/util/effect/app-node"
 import { Context, Deferred, Effect, Layer, Schema } from "effect"
 import { Permission } from "@opencode/schema/permission"
@@ -235,6 +236,15 @@ const layer = Layer.effect(
     const assert = Effect.fn("Permission.assert")((input: AssertInput) =>
       Effect.gen(function* () {
         if (closed) return yield* Effect.die(new DeclinedError())
+        // Okutobus (OkuCode): protected files (FR-27) and dangerous commands (FR-23) are refused in every mode.
+        const refused = OkuProtect.refusal(input.action, input.resources)
+        if (refused)
+          return yield* new BlockedError({
+            rules: [],
+            permission: input.action,
+            resources: input.resources,
+            reason: refused,
+          })
         const result = yield* evaluateInput(input)
         return yield* Effect.uninterruptibleMask((restore) =>
           Effect.gen(function* () {

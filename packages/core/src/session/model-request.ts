@@ -37,6 +37,7 @@ import { SessionRunnerModel } from "./runner/model.js"
 import { SessionSchema } from "./schema.js"
 import { SessionSystemPrompt } from "./system-prompt.js"
 import { toLLMMessages } from "./runner/to-llm-message.js"
+import { OkuProtect } from "../okutobus/protect.js"
 import type { SessionMessage } from "./message.js"
 
 const IMAGE_BYTES_TRIGGER = 25 * 1024 * 1024 // 25 MiB
@@ -113,8 +114,9 @@ export const baseTranscript = (input: {
       input.initial,
     ]
       .filter((part) => part.length > 0)
-      .map(SystemPart.make),
-    messages: toLLMMessages(input.messages, input.model.ref, providerMetadataKey),
+      // Okutobus (OkuCode, FR-26): secrets are replaced before anything reaches the model.
+      .map((part) => SystemPart.make(OkuProtect.redact(part))),
+    messages: OkuProtect.messages(toLLMMessages(input.messages, input.model.ref, providerMetadataKey)),
   }
 }
 

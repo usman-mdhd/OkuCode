@@ -8,6 +8,21 @@ import { Bom } from "@opencode/util/bom"
 import { Environment } from "./environment/index.js"
 import type { Files } from "./environment/index.js"
 import type { FileAccess } from "./file-access.js"
+import { OkuProtect } from "./okutobus/protect.js"
+
+// Okutobus (OkuCode, FR-26): the model only ever sees [REDACTED:…] for secrets; writing that placeholder would
+// destroy the real value, so such writes are refused.
+const guard = (target: Target, content: string | Uint8Array) =>
+  typeof content === "string" && OkuProtect.hasPlaceholder(content)
+    ? Effect.fail(
+        new Environment.Failed({
+          path: target.absolute,
+          cause: new Error(
+            `Refused to write ${target.resource}: it contains a [REDACTED:…] placeholder instead of a real secret. Leave secret values unchanged.`,
+          ),
+        }),
+      )
+    : Effect.void
 
 export type Target = Pick<FileAccess.Target, "absolute" | "resource">
 
@@ -87,6 +102,7 @@ const layer = Layer.effect(
     const write = Effect.fn("FileMutation.write")((input: WriteInput) =>
       withTargetLock(input.target)(
         Effect.gen(function* () {
+          yield* guard(input.target, input.content)
           const existed = yield* environment.files.stat(input.target.absolute).pipe(
             Effect.as(true),
             Effect.catchTag("Environment.NotFound", () => Effect.succeed(false)),
@@ -103,6 +119,7 @@ const layer = Layer.effect(
     const writeTextPreservingBom = Effect.fn("FileMutation.writeTextPreservingBom")((input: TextWriteInput) =>
       withTargetLock(input.target)(
         Effect.gen(function* () {
+          yield* guard(input.target, input.content)
           const next = Bom.split(input.content)
           const current = yield* environment.files.read(input.target.absolute, { offset: 0, length: 3 }).pipe(
             Effect.map((result) => result.bytes),
