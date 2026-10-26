@@ -17,6 +17,9 @@ import { RetainedImage } from "./services/retained-image"
 import { ServiceRegistration } from "./services/service-registration"
 import { RemoteTunnel } from "./services/remote-tunnel"
 import { WebUi } from "./services/web-ui"
+import { createAccounts } from "./okutobus/accounts"
+import { Store as AccountStore } from "./okutobus/accounts-store"
+import { OkuWeb } from "./okutobus/web"
 import { databasePath } from "./database-path"
 
 export type Mode = "default" | "service" | "stdio"
@@ -95,7 +98,10 @@ const processEffect = Effect.fnUntraced(function* (options: Options) {
             : randomBytes(32).toString("base64url")
       if (!password) return yield* Effect.fail(new Error("Missing server password"))
       const instanceID = randomUUID()
-      const transform = yield* WebUi.handler()
+      const webUi = yield* WebUi.handler()
+      // Okutobus (OkuCode): Google sign-in, team accounts and the admin panel run in front of the web UI and API.
+      const accounts = OkuWeb.wrap(createAccounts({ store: new AccountStore({ data: global.data, config: global.config }), password }))
+      const transform: typeof webUi = (app) => accounts(webUi(app))
       const remote = { urls: [] as ReadonlyArray<string> }
       const launch = start(
         {

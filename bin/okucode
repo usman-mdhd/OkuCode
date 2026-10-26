@@ -48,14 +48,21 @@ if [ "$1" = "web" ]; then
   # Default folder for normal chats (the home screen uses it when no project is added yet).
   mkdir -p "$HOME/OkuCode-Chats" 2>/dev/null || true
 
+  # The password is kept between runs (in ~/.okucode/web-password) so Google sign-ins stay signed in after a restart.
   PASSWORD="${OKUCODE_PASSWORD:-${OPENCODE_PASSWORD:-}}"
-  if [ -z "$PASSWORD" ]; then PASSWORD="$(LC_ALL=C tr -dc 'a-z0-9' </dev/urandom | head -c 12)"; fi
-  URL="http://127.0.0.1:$PORT"
+  PASSWORD_FILE="$HOME/.okucode/web-password"
+  if [ -z "$PASSWORD" ] && [ -s "$PASSWORD_FILE" ]; then PASSWORD="$(cat "$PASSWORD_FILE")"; fi
+  if [ -z "$PASSWORD" ]; then
+    PASSWORD="$(LC_ALL=C tr -dc 'a-z0-9' </dev/urandom | head -c 12)"
+    mkdir -p "$HOME/.okucode" && (umask 077 && printf '%s' "$PASSWORD" > "$PASSWORD_FILE")
+  fi
+  URL="http://localhost:$PORT"
   echo ""
   echo "  OkuCode web UI + API (this laptop only)"
   echo "  ---------------------------------------"
   echo "  Open:      $URL"
   echo "  Password:  $PASSWORD"
+  echo "  Admin:     $URL/okucode/admin"
   echo "  API docs:  $URL/openapi.json   (user: opencode, password above)"
   echo "  Stop:      press Ctrl+C"
   echo ""

@@ -10,6 +10,7 @@ import type { createHomeProjectsController } from "./projects/controller"
 type HomeProjectsController = ReturnType<typeof createHomeProjectsController>
 import { autoSend } from "@/new-session/auto-send"
 import { userName } from "./user-name"
+import { fetchMe } from "@/okutobus/account"
 
 const DEFAULT_CHAT_FOLDER = "OkuCode-Chats"
 
@@ -49,7 +50,15 @@ export function HomeHero(props: { home: HomeController; projects: HomeProjectsCo
   let input: HTMLTextAreaElement | undefined
 
   // The name is kept in this browser only (the V2 client does not load config.username yet).
-  const name = userName.value
+  // A name typed here wins; otherwise the first name of the Google account that signed in.
+  const [me] = createResource(
+    () => {
+      const conn = props.home.server.focused()
+      return conn?.type === "http" ? conn.http : undefined
+    },
+    (http) => fetchMe(http),
+  )
+  const name = () => userName.value() || (me() && !me()!.owner ? me()!.name?.split(" ")[0] : undefined)
   const [editingName, setEditingName] = createSignal(false)
   const projects = createMemo(() => props.home.project.list())
   // With no project added yet, chat in the folder the server runs in (`okucode web` starts in ~/OkuCode-Chats).

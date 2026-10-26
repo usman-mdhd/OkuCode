@@ -1,0 +1,456 @@
+// Okutobus (OkuCode): team sign-in and the admin panel.
+//
+// - Google sign-in: only emails an admin added (or invited) can sign in. A successful sign-in sets the server's normal
+//   session cookie (the same one pairing links use) plus an `okucode_user` cookie that says who is signed in.
+// - Every request that relies on the session cookie must also carry the `okucode_user` cookie of an active user, so
+//   disabling or removing someone signs them out at once. Password (Basic) access for the owner is unchanged.
+// - Admin API under /okucode/api, admin page at /okucode/admin, invite emails through Gmail.
+import { createHmac, randomBytes, timingSafeEqual } from "node:crypto"
+import { Option } from "effect"
+import { ServerAuth } from "@opencode/server/auth"
+import { ADMIN_PAGE } from "./admin-page"
+import { activeAdmins, normalize, type Role, type Settings, type Store, type User } from "./accounts-store"
+import { send } from "./smtp"
+
+export type Request = {
+  method: string
+  url: URL
+  headers: Record<string, string | undefined>
+  cookies: Record<string, string>
+  body?: () => Promise<string>
+}
+
+export type Response = { status: number; headers?: Record<string, string>; cookies?: string[]; body?: string }
+
+const USER_COOKIE = "okucode_user"
+const STATE_COOKIE = "okucode_oauth"
+const USER_TTL = ServerAuth.SESSION_TTL_SECONDS
+const OWNER = "owner"
+
+const GOOGLE = {
+  auth: "https://accounts.google.com/o/oauth2/v2/auth",
+  token: "https://oauth2.googleapis.com/token",
+  userinfo: "https://openidconnect.googleapis.com/v1/userinfo",
+}
+
+const json = (status: number, value: unknown, cookies?: string[]): Response => ({
+  status,
+  headers: { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" },
+  body: JSON.stringify(value),
+  cookies,
+})
+const redirect = (location: string, cookies?: string[]): Response => ({
+  status: 302,
+  headers: { location, "cache-control": "no-store" },
+  cookies,
+})
+
+function cookie(name: string, value: string, maxAge: number, secure: boolean) {
+  return `${name}=${value}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${maxAge}${secure ? "; Secure" : ""}`
+}
+
+const escapeHtml = (value: string) =>
+  value.replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[char]!)
+
+export function createAccounts(input: {
+  store: Store
+  password: string
+  fetch?: typeof fetch
+  sendMail?: typeof send
+  now?: () => number
+}) {
+  const { store } = input
+  const http = input.fetch ?? fetch
+  const mail = input.sendMail ?? send
+  const now = input.now ?? Date.now
+  const auth: ServerAuth.Info = { password: Option.some(input.password), username: "opencode" }
+
+  const sign = (payload: string) => createHmac("sha256", store.secret()).update(payload).digest("base64url")
+  const same = (a: string, b: string) => {
+    const left = Buffer.from(a)
+    const right = Buffer.from(b)
+    return left.length === right.length && timingSafeEqual(left, right)
+  }
+
+  function userToken(email: string) {
+    const expires = String(Math.floor(now() / 1000) + USER_TTL)
+    const id = Buffer.from(email).toString("base64url")
+    return `${id}.${expires}.${sign(`${id}.${expires}`)}`
+  }
+
+  /** Who is signed in through the okucode_user cookie, if anyone (and still allowed). */
+  function cookieUser(request: Request): (User & { owner?: boolean }) | undefined {
+    const token = request.cookies[USER_COOKIE]
+    if (!token) return
+    const [id, expires, signature] = token.split(".")
+    if (!id || !expires || !signature || !same(signature, sign(`${id}.${expires}`))) return
+    if (Number(expires) * 1000 <= now()) return
+    const email = Buffer.from(id, "base64url").toString()
+    if (email === OWNER) return ownerUser()
+    const user = store.get(email)
+    return user && user.status === "active" ? user : undefined
+  }
+
+  function ownerUser(): User & { owner: true } {
+    return { email: OWNER, name: "Owner", role: "admin", status: "active", addedAt: 0, owner: true }
+  }
+
+  function basicOwner(request: Request) {
+    const match = /^Basic\s+(.+)$/i.exec(request.headers.authorization ?? "")
+    if (!match) return false
+    const decoded = Buffer.from(match[1]!, "base64").toString()
+    const separator = decoded.indexOf(":")
+    return separator > 0 && decoded.slice(separator + 1) === input.password
+  }
+
+  function currentUser(request: Request) {
+    return basicOwner(request) ? ownerUser() : cookieUser(request)
+  }
+
+  function settings() {
+    const value = store.settings()
+    return value
+  }
+
+  function publicUrl(request: Request) {
+    const configured = settings().publicUrl?.replace(/\/+$/, "")
+    if (configured) return configured
+    return `${request.url.protocol}//${request.headers.host ?? request.url.host}`
+  }
+
+  const secure = (request: Request) => publicUrl(request).startsWith("https:")
+  const googleReady = (value: Settings = settings()) => !!(value.google?.clientId && value.google?.clientSecret)
+  const gmailReady = (value: Settings = settings()) => !!(value.gmail?.address && value.gmail?.appPassword)
+
+  function signInCookies(request: Request, email: string) {
+    const session = ServerAuth.issueSession(auth, now())!
+    return [
+      cookie(ServerAuth.sessionCookieName(request.headers.host), session, USER_TTL, secure(request)),
+      cookie(USER_COOKIE, userToken(email), USER_TTL, secure(request)),
+    ]
+  }
+
+  function signOutCookies(request: Request) {
+    return [
+      cookie(ServerAuth.sessionCookieName(request.headers.host), "", 0, secure(request)),
+      cookie(USER_COOKIE, "", 0, secure(request)),
+    ]
+  }
+
+  // Changes must come from this page (not another site) and be JSON.
+  function sameOrigin(request: Request) {
+    const origin = request.headers.origin
+    if (origin && URL.parse(origin)?.host !== request.headers.host) return false
+    return (request.headers["content-type"] ?? "").includes("application/json")
+  }
+
+  async function body<T>(request: Request): Promise<T> {
+    try {
+      return JSON.parse((await request.body?.()) || "{}") as T
+    } catch {
+      return {} as T
+    }
+  }
+
+  function publicView(user: User) {
+    return {
+      email: user.email,
+      name: user.name,
+      picture: user.picture,
+      role: user.role,
+      status: user.status,
+      addedAt: user.addedAt,
+      addedBy: user.addedBy,
+      invitedAt: user.invitedAt,
+      lastLogin: user.lastLogin,
+    }
+  }
+
+  async function sendInvite(request: Request, user: User, by: string) {
+    const config = settings()
+    if (!gmailReady(config)) throw new Error("Set up Gmail in the Setup tab to send invite emails.")
+    const link = publicUrl(request)
+    const inviter = by === OWNER ? "The OkuCode admin" : by
+    const text = [
+      `Hi,`,
+      ``,
+      `${inviter} invited you to OkuCode, the Okutobus AI coding assistant.`,
+      ``,
+      `Open ${link} and choose "Sign in with Google" using this email address (${user.email}).`,
+      ``,
+      `OkuCode`,
+    ].join("\n")
+    const html = `<!doctype html><html><body style="font-family:Arial,Helvetica,sans-serif;color:#1f2328;background:#f6f7f9;padding:24px">
+<div style="max-width:480px;margin:auto;background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:28px">
+<h2 style="margin:0 0 12px;font-size:20px">You're invited to OkuCode</h2>
+<p style="line-height:1.5">${escapeHtml(inviter)} invited you to <b>OkuCode</b>, the Okutobus AI coding assistant.</p>
+<p style="line-height:1.5">Sign in with your Google account <b>${escapeHtml(user.email)}</b>.</p>
+<p style="margin:24px 0"><a href="${escapeHtml(link)}" style="background:#111;color:#fff;text-decoration:none;padding:10px 18px;border-radius:8px;display:inline-block">Open OkuCode</a></p>
+<p style="color:#6b7280;font-size:12px">If the button doesn't work, open ${escapeHtml(link)}</p>
+</div></body></html>`
+    await mail({
+      host: config.smtp?.host ?? "smtp.gmail.com",
+      port: config.smtp?.port ?? 465,
+      insecure: config.smtp?.insecure,
+      user: config.gmail!.address!,
+      pass: config.gmail!.appPassword!.replace(/\s+/g, ""),
+      from: config.gmail!.address!,
+      fromName: config.gmail!.fromName || "OkuCode",
+      to: user.email,
+      subject: "You're invited to OkuCode",
+      text,
+      html,
+    })
+    store.update(user.email, (item) => {
+      item.invitedAt = now()
+    })
+  }
+
+  // ---- Google sign-in ----
+
+  function googleStart(request: Request): Response {
+    const config = settings()
+    if (!googleReady(config)) return redirect("/?okucode_error=google_not_set_up")
+    // Google sends the user back to one fixed address, so start from it (cookies are per host).
+    const base = publicUrl(request)
+    const here = `${request.url.protocol}//${request.headers.host ?? request.url.host}`
+    if (URL.parse(base)?.host !== URL.parse(here)?.host) return redirect(`${base}/okucode/auth/google`)
+    const state = randomBytes(16).toString("base64url")
+    const url = new URL(config.googleEndpoints?.auth ?? GOOGLE.auth)
+    url.searchParams.set("client_id", config.google!.clientId!)
+    url.searchParams.set("redirect_uri", `${base}/okucode/auth/google/callback`)
+    url.searchParams.set("response_type", "code")
+    url.searchParams.set("scope", "openid email profile")
+    url.searchParams.set("state", state)
+    url.searchParams.set("prompt", "select_account")
+    return redirect(url.href, [cookie(STATE_COOKIE, `${state}.${sign(state)}`, 600, secure(request))])
+  }
+
+  async function googleCallback(request: Request): Promise<Response> {
+    const fail = (code: string, extra?: string) =>
+      redirect(`/?okucode_error=${code}${extra ? `&email=${encodeURIComponent(extra)}` : ""}`, [
+        cookie(STATE_COOKIE, "", 0, secure(request)),
+      ])
+    const config = settings()
+    if (!googleReady(config)) return fail("google_not_set_up")
+    const state = request.url.searchParams.get("state") ?? ""
+    const [saved, signature] = (request.cookies[STATE_COOKIE] ?? "").split(".")
+    if (!state || !saved || !signature || saved !== state || !same(signature, sign(saved))) return fail("try_again")
+    const code = request.url.searchParams.get("code")
+    if (!code) return fail("cancelled")
+    try {
+      const token = await http(config.googleEndpoints?.token ?? GOOGLE.token, {
+        method: "POST",
+        headers: { "content-type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams({
+          code,
+          client_id: config.google!.clientId!,
+          client_secret: config.google!.clientSecret!,
+          redirect_uri: `${publicUrl(request)}/okucode/auth/google/callback`,
+          grant_type: "authorization_code",
+        }),
+      })
+      if (!token.ok) return fail("google_failed")
+      const { access_token } = (await token.json()) as { access_token?: string }
+      if (!access_token) return fail("google_failed")
+      const info = await http(config.googleEndpoints?.userinfo ?? GOOGLE.userinfo, {
+        headers: { authorization: `Bearer ${access_token}` },
+      })
+      if (!info.ok) return fail("google_failed")
+      const profile = (await info.json()) as { email?: string; email_verified?: boolean; name?: string; picture?: string }
+      if (!profile.email || profile.email_verified === false) return fail("google_failed")
+      const email = normalize(profile.email)
+      const user = store.get(email)
+      if (!user) return fail("not_invited", email)
+      if (user.status === "disabled") return fail("disabled", email)
+      store.update(email, (item) => {
+        item.status = "active"
+        item.name = profile.name ?? item.name
+        item.picture = profile.picture ?? item.picture
+        item.lastLogin = now()
+      })
+      return redirect("/", [...signInCookies(request, email), cookie(STATE_COOKIE, "", 0, secure(request))])
+    } catch {
+      return fail("google_failed")
+    }
+  }
+
+  // ---- admin API ----
+
+  async function admin(request: Request, me: User, path: string): Promise<Response> {
+    const by = me.email
+    if (path === "/okucode/api/users" && request.method === "GET")
+      return json(200, { users: store.list().map(publicView), me: by })
+
+    if (path === "/okucode/api/settings" && request.method === "GET") {
+      const value = settings()
+      return json(200, {
+        publicUrl: value.publicUrl ?? "",
+        suggestedUrl: publicUrl(request),
+        callbackUrl: `${publicUrl(request)}/okucode/auth/google/callback`,
+        googleClientId: value.google?.clientId ?? "",
+        googleSecretSaved: !!value.google?.clientSecret,
+        gmailAddress: value.gmail?.address ?? "",
+        gmailPasswordSaved: !!value.gmail?.appPassword,
+        fromName: value.gmail?.fromName ?? "OkuCode",
+        googleReady: googleReady(value),
+        gmailReady: gmailReady(value),
+      })
+    }
+
+    if (!sameOrigin(request)) return json(403, { error: "Request blocked." })
+
+    if (path === "/okucode/api/settings" && request.method === "PUT") {
+      const next = await body<{
+        publicUrl?: string
+        googleClientId?: string
+        googleClientSecret?: string
+        gmailAddress?: string
+        gmailAppPassword?: string
+        fromName?: string
+      }>(request)
+      const value = settings()
+      const url = (next.publicUrl ?? "").trim().replace(/\/+$/, "")
+      if (url && !/^https?:\/\/[^/\s]+$/.test(url))
+        return json(400, { error: "OkuCode address must look like http://localhost:4096 or https://okucode.example.com" })
+      value.publicUrl = url || undefined
+      value.google = {
+        clientId: (next.googleClientId ?? "").trim() || undefined,
+        clientSecret: (next.googleClientSecret ?? "").trim() || value.google?.clientSecret,
+      }
+      value.gmail = {
+        address: (next.gmailAddress ?? "").trim() || undefined,
+        appPassword: (next.gmailAppPassword ?? "").replace(/\s+/g, "") || value.gmail?.appPassword,
+        fromName: (next.fromName ?? "").trim() || undefined,
+      }
+      store.saveSettings(value)
+      return json(200, { ok: true })
+    }
+
+    if (path === "/okucode/api/users" && request.method === "POST") {
+      const next = await body<{ email?: string; role?: Role; invite?: boolean }>(request)
+      const role: Role = next.role === "admin" ? "admin" : "member"
+      let user: User
+      try {
+        user = store.add({ email: next.email ?? "", role, by, invited: false })
+      } catch (error) {
+        return json(400, { error: (error as Error).message })
+      }
+      if (next.invite) {
+        try {
+          await sendInvite(request, user, by)
+        } catch (error) {
+          return json(200, { user: publicView(store.get(user.email)!), warning: `Added, but the invite email failed: ${(error as Error).message}` })
+        }
+      }
+      return json(200, { user: publicView(store.get(user.email)!) })
+    }
+
+    const match = /^\/okucode\/api\/users\/([^/]+)(\/resend)?$/.exec(path)
+    if (match) {
+      const email = normalize(decodeURIComponent(match[1]!))
+      const target = store.get(email)
+      if (!target) return json(404, { error: "User not found." })
+      if (match[2] && request.method === "POST") {
+        try {
+          await sendInvite(request, target, by)
+          return json(200, { user: publicView(store.get(email)!) })
+        } catch (error) {
+          return json(400, { error: (error as Error).message })
+        }
+      }
+      if (request.method === "DELETE") {
+        if (email === by) return json(400, { error: "You can't remove yourself." })
+        try {
+          store.remove(email)
+          return json(200, { ok: true })
+        } catch (error) {
+          return json(400, { error: (error as Error).message })
+        }
+      }
+      if (request.method === "PATCH") {
+        const next = await body<{ role?: Role; disabled?: boolean }>(request)
+        try {
+          const user = store.update(email, (item, all) => {
+            const others = activeAdmins(all).filter((admin) => admin.email !== item.email)
+            if (next.role && next.role !== item.role) {
+              if (item.role === "admin" && others.length === 0) throw new Error("There must be at least one admin.")
+              item.role = next.role === "admin" ? "admin" : "member"
+            }
+            if (next.disabled !== undefined) {
+              if (email === by) throw new Error("You can't disable yourself.")
+              if (next.disabled && item.role === "admin" && others.length === 0)
+                throw new Error("There must be at least one active admin.")
+              item.status = next.disabled ? "disabled" : item.lastLogin ? "active" : "invited"
+            }
+          })
+          return json(200, { user: publicView(user) })
+        } catch (error) {
+          return json(400, { error: (error as Error).message })
+        }
+      }
+    }
+    return json(404, { error: "Not found." })
+  }
+
+  return {
+    /** Handles /okucode/* requests; returns undefined for everything else. */
+    async handle(request: Request): Promise<Response | undefined> {
+      const path = request.url.pathname
+      if (!path.startsWith("/okucode/")) return undefined
+
+      if (path === "/okucode/auth/config")
+        return json(200, { google: googleReady(), accounts: store.enabled() || googleReady() })
+      if (path === "/okucode/auth/google" && request.method === "GET") return googleStart(request)
+      if (path === "/okucode/auth/google/callback" && request.method === "GET") return googleCallback(request)
+      if (path === "/okucode/auth/logout" && request.method === "POST") return json(200, { ok: true }, signOutCookies(request))
+      if (path === "/okucode/auth/password" && request.method === "POST") {
+        if (!sameOrigin(request)) return json(403, { error: "Request blocked." })
+        const { password } = await body<{ password?: string }>(request)
+        if (!password || !same(password, input.password)) return json(401, { error: "Wrong password." })
+        return json(200, { ok: true }, signInCookies(request, OWNER))
+      }
+      if (path === "/okucode/me") {
+        const me = currentUser(request)
+        return me ? json(200, { ...publicView(me), owner: me.email === OWNER }) : json(401, { error: "Not signed in." })
+      }
+      if (path === "/okucode/admin" || path === "/okucode/admin/")
+        return {
+          status: 200,
+          headers: {
+            "content-type": "text/html; charset=utf-8",
+            "cache-control": "no-store",
+            "content-security-policy":
+              "default-src 'self'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src 'self' data: https:; connect-src 'self'",
+          },
+          body: ADMIN_PAGE,
+        }
+      if (path.startsWith("/okucode/api/")) {
+        const me = currentUser(request)
+        if (!me) return json(401, { error: "Not signed in." })
+        if (me.role !== "admin") return json(403, { error: "Only admins can do this." })
+        return admin(request, me, path)
+      }
+      return json(404, { error: "Not found." })
+    },
+
+    /**
+     * For all other requests: a request that relies on the session cookie (no password) must belong to a user that is
+     * still allowed. Returns a 401 response to stop it, or undefined to let it through.
+     */
+    gate(request: Request): Response | undefined {
+      const path = request.url.pathname
+      // Only the API is checked; the page itself loads and then shows the sign-in screen.
+      if (!(path === "/api" || path.startsWith("/api/") || path.startsWith("/auth/") || path === "/openapi.json")) return undefined
+      const session = request.cookies[ServerAuth.sessionCookieName(request.headers.host)]
+      if (!session) return undefined
+      if (request.headers.authorization || request.url.searchParams.get("auth_token")) return undefined
+      if (cookieUser(request)) return undefined
+      // Pairing links (opencode pair) also use the session cookie; they keep working until accounts are set up.
+      if (!store.enabled() && !request.cookies[USER_COOKIE]) return undefined
+      return { ...json(401, { _tag: "UnauthorizedError", message: "Signed out" }), cookies: signOutCookies(request) }
+    },
+  }
+}
+
+export type Accounts = ReturnType<typeof createAccounts>

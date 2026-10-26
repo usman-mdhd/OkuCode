@@ -2,7 +2,8 @@
 // It replaces the tab strip on wide screens so the app works like a simple chat app.
 import { useLocation, useNavigate } from "@solidjs/router"
 import { Mark } from "@opencode/ui/logo"
-import { createMemo, createSignal, For, Show } from "solid-js"
+import { createMemo, createResource, createSignal, For, Show } from "solid-js"
+import { adminPanelUrl, fetchMe, signOut } from "@/okutobus/account"
 import { createHomeController } from "@/home/model"
 import { createHomeProjectsController } from "@/home/projects/controller"
 import { createHomeSessionsController, type HomeSessionRecord } from "@/home/sessions/controller"
@@ -41,6 +42,8 @@ const ICONS = {
   panel: "M2.5 3h11v10h-11zM6 3v10",
   menu: "M2.5 4.5h11M2.5 8h11M2.5 11.5h11",
   search: "M7 12A5 5 0 1 0 7 2a5 5 0 0 0 0 10Zm7 2-3.5-3.5",
+  shield: "M8 1.8 13 3.6v4.1c0 3.1-2.1 5.6-5 6.5-2.9-.9-5-3.4-5-6.5V3.6L8 1.8Z",
+  logout: "M6 2.5H3.5v11H6M10.5 11 13.5 8l-3-3M13.5 8H6",
   help: "M8 14.5A6.5 6.5 0 1 0 8 1.5a6.5 6.5 0 0 0 0 13ZM6.2 6.2a1.9 1.9 0 0 1 3.6.7c0 1.3-1.8 1.6-1.8 2.8M8 11.6h.01",
 }
 
@@ -92,7 +95,17 @@ export function OkuCodeSidebar() {
       .slice(0, 50)
   })
   const isOpen = (record: HomeSessionRecord) => location.pathname.endsWith(`/session/${record.session.id}`)
-  const initial = () => (userName.value() || "You").charAt(0).toUpperCase()
+  // Signed-in person (Google account or the owner with the server password).
+  const [me] = createResource(
+    () => (server()?.type === "http" ? server()!.http : undefined),
+    (http) => fetchMe(http),
+  )
+  const serverUrl = () => {
+    const conn = server()
+    return conn?.type === "http" ? conn.http.url : undefined
+  }
+  const displayName = () => me()?.name || userName.value() || (me() && !me()!.owner ? me()!.email : "") || "You"
+  const initial = () => displayName().charAt(0).toUpperCase()
 
   const newChat = () => {
     navigate("/")
@@ -199,6 +212,14 @@ export function OkuCodeSidebar() {
               <Icon path={ICONS.settings} />
               Settings
             </button>
+            <Show when={me()?.role === "admin" && serverUrl()}>
+              {(url) => (
+                <button type="button" class={row} onClick={() => platform.openExternal(adminPanelUrl(url()))}>
+                  <Icon path={ICONS.shield} />
+                  Admin panel
+                </button>
+              )}
+            </Show>
             <button type="button" class={row} onClick={() => platform.openExternal("https://okutobus.com")}>
               <Icon path={ICONS.help} />
               Help
@@ -245,10 +266,24 @@ export function OkuCodeSidebar() {
         </div>
 
         <div class="mt-2 flex items-center gap-2 border-t border-v2-border-border-muted px-1.5 pt-2">
-          <span class="flex size-8 shrink-0 items-center justify-center rounded-full bg-v2-background-bg-layer-03 text-[13px] font-semibold text-v2-text-text-base">
-            {initial()}
+          <span class="flex size-8 shrink-0 items-center justify-center overflow-hidden rounded-full bg-v2-background-bg-layer-03 text-[13px] font-semibold text-v2-text-text-base">
+            <Show when={me()?.picture} fallback={initial()}>
+              {(src) => <img src={src()} alt="" referrerpolicy="no-referrer" class="size-full" />}
+            </Show>
           </span>
-          <span class="min-w-0 flex-1 truncate text-[14px] text-v2-text-text-base">{userName.value() || "You"}</span>
+          <span class="flex min-w-0 flex-1 flex-col">
+            <span class="truncate text-[14px] text-v2-text-text-base">{displayName()}</span>
+            <Show when={me() && !me()!.owner && me()!.email !== displayName()}>
+              <span class="truncate text-[11.5px] text-v2-text-text-faint">{me()!.email}</span>
+            </Show>
+          </span>
+          <Show when={me() && !me()!.owner && serverUrl()}>
+            {(url) => (
+              <button type="button" aria-label="Sign out" title="Sign out" class="rounded-md p-1.5 hover:bg-v2-background-bg-layer-02" onClick={() => void signOut(url())}>
+                <Icon path={ICONS.logout} />
+              </button>
+            )}
+          </Show>
           <button type="button" aria-label="Settings" class="rounded-md p-1.5 hover:bg-v2-background-bg-layer-02" onClick={() => openSettings()}>
             <Icon path={ICONS.settings} />
           </button>
