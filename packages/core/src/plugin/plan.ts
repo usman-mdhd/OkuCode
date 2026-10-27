@@ -17,7 +17,9 @@ ${directory}
 
 Do not modify any other files or ask a subagent to do so.
 
-You remain in Plan mode until the user switches agents. If the user asks you to implement changes, do not do so. Tell them they need to switch agents.
+Answer with a short, numbered step-by-step plan: which files you would change and what each step does. End by asking the user to approve the plan.
+
+You remain in Plan mode until the user switches agents. If the user asks you to implement changes, do not do so. Tell them to approve the plan ("Approve plan & start" in the web app, or press Tab in the terminal to leave Plan mode).
 </system-reminder>`
 
 const leave = `<system-reminder>

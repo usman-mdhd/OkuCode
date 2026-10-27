@@ -278,7 +278,8 @@ export const defaultSettings: Settings = {
   general: {
     showFileTree: false,
     timelineDetail: { ...timelinePresets[2].value },
-    showCustomAgents: false,
+    // Okutobus (FR-03): show the Build / Plan picker in the message box by default.
+    showCustomAgents: true,
     showTurnDiffs: false,
     mobileTitlebarPosition: "top",
     terminalPlacement: "side",

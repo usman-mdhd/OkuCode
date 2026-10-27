@@ -33,6 +33,7 @@ import { resolveSessionComposerSelection } from "./selection"
 import { createSessionRequestModel } from "../requests/model"
 import type { Region } from "@/runtime/extension/panels"
 import { SessionLocationMissing } from "./location-missing"
+import { PlanApprovalBar } from "@/okutobus/plan-approval"
 
 export function createActiveSessionRegion(input: {
   session: SessionModel
@@ -316,6 +317,7 @@ export function ActiveSessionComposerRegion(props: {
           fallback={
             <div class="relative">
               <SessionQueuePanel queue={props.model.queue} />
+              <PlanApprovalBar session={props.session} adapter={props.model.adapter} composer={props.model.composer} />
               <div class="relative z-10">
                 <Composer
                   model={props.model.composer}

@@ -53,6 +53,8 @@ export function createSessionComposerController(input: {
     region,
     queue,
     composer,
+    // Okutobus: the Plan approval bar switches agent and sends through the same adapter.
+    adapter,
     drop: {
       active: () => editable() && composer.state.drag === "active",
       input: () => composer.model.selection.current()?.capabilities.input,
