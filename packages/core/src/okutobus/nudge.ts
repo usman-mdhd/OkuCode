@@ -31,6 +31,11 @@ export function decide(messages: readonly SessionMessage.Info[]): string | undef
       break
     }
     if (message.type === "synthetic" && message.text === TEXT) return undefined
+    // The work already happened earlier in this turn ("I have created test.py" after the write tool ran);
+    // a reminder would only make the model do it again. Reading alone does not count: "I'll update it" after
+    // a read still needs the reminder.
+    if (message.type === "assistant" && message.content.some((part) => part.type === "tool" && part.name !== "read"))
+      return undefined
   }
   const text = latest.content.flatMap((part) => (part.type === "text" ? [part.text] : [])).join("\n")
   if (!text.trim()) return undefined
