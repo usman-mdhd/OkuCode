@@ -27,6 +27,8 @@ export type Settings = {
   /** Test hooks: other Google endpoints (never set in normal use). */
   googleEndpoints?: { auth?: string; token?: string; userinfo?: string }
   smtp?: { host?: string; port?: number; insecure?: boolean }
+  /** FR-22 approval mode: "ask", "auto-edit" or "full-auto" (read by core's OkuApproval). */
+  approvalMode?: string
 }
 
 type File = { secret: string; users: User[] }

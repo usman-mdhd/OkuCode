@@ -17,10 +17,11 @@ import { SettingsList } from "@/settings/list"
 import { SettingsRow } from "@/settings/row"
 import { createShellOptions, type ShellSettingsController } from "./controllers"
 import "@/settings/settings.css"
+import { ApprovalModeSetting } from "@/okutobus/approval-setting"
 
 const tabLayoutOptions: ("horizontal" | "vertical")[] = ["horizontal", "vertical"]
 
-const AutoApprovePermissionsSetting: Component = () => {
+export const AutoApprovePermissionsSetting: Component = () => {
   const language = useLanguage()
   const settings = useSettings()
 
@@ -246,7 +247,8 @@ export const SettingsGeneral: Component = () => {
         <TabLayoutSetting />
 
         <WorkspaceDestinationSetting />
-        <AutoApprovePermissionsSetting />
+        {/* Okutobus (OkuCode) FR-22: approval modes replace the single auto-accept switch. */}
+        <ApprovalModeSetting />
 
         <SettingsRow
           title={language.t("settings.general.row.showCustomAgents.title")}

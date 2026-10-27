@@ -162,6 +162,20 @@ describe("OkuCode accounts", () => {
     expect(state.headers!.location).toContain("okucode_error")
   })
 
+  test("admins set the approval mode; it is kept with the other settings", async () => {
+    const t = setup()
+    expect((await t.call("GET", "/okucode/api/approval")).status).toBe(401)
+    await t.call("POST", "/okucode/auth/password", { body: { password: PASSWORD } })
+    expect((await t.call("GET", "/okucode/api/approval")).data).toEqual({ mode: null })
+    t.store.saveSettings({ google: { clientId: "id", clientSecret: "secret" } })
+    expect((await t.call("PUT", "/okucode/api/approval", { body: { mode: "nope" } })).status).toBe(400)
+    expect((await t.call("PUT", "/okucode/api/approval", { body: { mode: "auto-edit" } })).data).toEqual({ mode: "auto-edit" })
+    expect(t.store.settings()).toMatchObject({ approvalMode: "auto-edit", google: { clientId: "id" } })
+    await t.call("POST", "/okucode/api/users", { body: { email: "new@okutobus.com" } })
+    await googleSignIn(t)
+    expect((await t.call("PUT", "/okucode/api/approval", { body: { mode: "full-auto" } })).status).toBe(403)
+  })
+
   test("email message is valid MIME", () => {
     const body = message({
       host: "", port: 0, user: "", pass: "", from: "a@b.com", fromName: "OkuCode", to: "c@d.com",

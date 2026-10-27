@@ -1,5 +1,6 @@
 export * as Permission from "./permission.js"
 
+import { OkuApproval } from "./okutobus/approval.js"
 import { OkuProtect } from "./okutobus/protect.js"
 import { makeLocationNode } from "@opencode/util/effect/app-node"
 import { Context, Deferred, Effect, Layer, Schema } from "effect"
@@ -174,9 +175,21 @@ const layer = Layer.effect(
     const evaluateInput = Effect.fnUntraced(function* (input: AssertInput) {
       const rules = yield* configured(input.sessionID, input.agent)
       if (denied(input, rules)) return { effect: "deny" as const, rules }
-      const all = [...rules, ...(yield* savedRules())]
+      const saved = yield* savedRules()
+      const all = [...rules, ...saved]
       const effects = input.resources.map((resource) => evaluate(input.action, resource, all).effect)
-      const effect: Permission.Effect = effects.includes("ask") ? "ask" : "allow"
+      // Okutobus (OkuCode) FR-22: the approval mode from Settings decides edits and shell commands.
+      // A specific allow rule ("npm test*", a saved "Always") is kept; catch-all "*" allows follow the mode.
+      const explicitAllow = input.resources.every((resource) => {
+        const rule = evaluate(input.action, resource, all)
+        return rule.effect === "allow" && rule.resource !== "*"
+      })
+      const effect: Permission.Effect = OkuApproval.apply(
+        effects.includes("ask") ? "ask" : "allow",
+        input.action,
+        OkuApproval.mode(),
+        explicitAllow,
+      )
       const event = yield* hooks.trigger("permission", "evaluate", {
         sessionID: input.sessionID,
         agent: input.agent,

@@ -282,6 +282,10 @@ export function createAccounts(input: {
     if (path === "/okucode/api/users" && request.method === "GET")
       return json(200, { users: store.list().map(publicView), me: by })
 
+    // FR-22: approval mode (Ask every time / Auto-edit / Full-auto), used by every chat on this server.
+    if (path === "/okucode/api/approval" && request.method === "GET")
+      return json(200, { mode: settings().approvalMode ?? null })
+
     if (path === "/okucode/api/settings" && request.method === "GET") {
       const value = settings()
       return json(200, {
@@ -299,6 +303,14 @@ export function createAccounts(input: {
     }
 
     if (!sameOrigin(request)) return json(403, { error: "Request blocked." })
+
+    if (path === "/okucode/api/approval" && request.method === "PUT") {
+      const next = await body<{ mode?: string }>(request)
+      if (next.mode !== "ask" && next.mode !== "auto-edit" && next.mode !== "full-auto")
+        return json(400, { error: "Mode must be ask, auto-edit or full-auto." })
+      store.saveSettings({ ...settings(), approvalMode: next.mode })
+      return json(200, { mode: next.mode })
+    }
 
     if (path === "/okucode/api/settings" && request.method === "PUT") {
       const next = await body<{
