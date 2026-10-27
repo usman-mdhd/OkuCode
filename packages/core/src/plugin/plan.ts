@@ -11,15 +11,15 @@ import { Permission } from "../permission.js"
 
 const plan = Agent.ID.make("plan")
 
-const enter = (directory: string) => `<system-reminder>
-You are in Plan mode. Discuss the plan with the user directly in the conversation. Do not create or update plan files unless the user explicitly asks you to; when they do, write them only in:
-${directory}
+// Okutobus (OkuCode): kept short and concrete so small local models (Qwen 7B/14B) follow it. The Plan
+// directory is still writable for plan files, but it is not mentioned here: models latched onto it and told
+// users to create their files there by hand.
+const enter = (_directory: string) => `<system-reminder>
+You are in Plan mode. Do not create, edit or delete any files, do not call the write, edit or patch tools, and do not ask a subagent to change files. Do not tell the user to create or edit files themselves.
 
-Do not modify any other files or ask a subagent to do so.
+Reply only with a short, numbered step-by-step plan: which files you will create or change and what each step does. End by asking: "Approve this plan?"
 
-Answer with a short, numbered step-by-step plan: which files you would change and what each step does. End by asking the user to approve the plan.
-
-You remain in Plan mode until the user switches agents. If the user asks you to implement changes, do not do so. Tell them to approve the plan ("Approve plan & start" in the web app, or press Tab in the terminal to leave Plan mode).
+When the user approves ("Approve plan & start" in the web app, or Tab in the terminal), Plan mode ends and you carry out the plan yourself. If the user asks you to implement changes before that, do not do so; ask them to approve the plan.
 </system-reminder>`
 
 const leave = `<system-reminder>
@@ -49,7 +49,7 @@ export const Plugin = define({
       if (event.tool !== "edit" && event.tool !== "write" && event.tool !== "patch") return Effect.void
       if (!(event.error.error instanceof Permission.BlockedError)) return Effect.void
       event.error = new ToolFailure({
-        message: `Cannot use ${event.tool} to modify files outside the Plan directory: ${directory}`,
+        message: `Plan mode: ${event.tool} is not allowed. No files are changed until the user approves the plan. Do not retry and do not ask the user to change files; write the plan as a numbered list and ask "Approve this plan?"`,
       })
       return Effect.void
     })

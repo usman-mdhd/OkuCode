@@ -160,9 +160,9 @@ describe("plan plugin reminders", () => {
       const { persisted } = yield* run([agentSelected(plan, build), agentSelected(build, plan)])
       yield* settle(persisted, 2)
       expect(persisted[0]).toContain("You are in Plan mode")
-      expect(persisted[0]).toContain("Do not create or update plan files unless the user explicitly asks you to")
-      expect(persisted[0]).toContain(planDirectory)
-      expect(persisted[0]).toContain("Do not modify any other files")
+      expect(persisted[0]).toContain("Do not create, edit or delete any files")
+      expect(persisted[0]).toContain("Approve this plan?")
+      expect(persisted[0]).not.toContain(planDirectory)
       expect(persisted[1]).toContain("NO LONGER in Plan mode")
     }),
   )
@@ -267,7 +267,7 @@ describe("plan plugin mutations", () => {
     }),
   )
 
-  it.effect("rewrites blocked mutation failures with the Plan directory", () =>
+  it.effect("rewrites blocked mutation failures with a plain Plan mode message", () =>
     Effect.gen(function* () {
       const { toolHook } = yield* run()
       for (const tool of ["edit", "write", "patch"] as const) {
@@ -283,8 +283,9 @@ describe("plan plugin mutations", () => {
           }),
         )
         yield* toolHook(event)
-        expect(event.error.message).toContain("outside the Plan directory")
-        expect(event.error.message).toContain(planDirectory)
+        expect(event.error.message).toContain("Plan mode")
+        expect(event.error.message).toContain("Approve this plan?")
+        expect(event.error.message).not.toContain(planDirectory)
       }
     }),
   )
