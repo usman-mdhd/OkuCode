@@ -12,6 +12,7 @@ import { fileURLToPath } from "url"
 import { Image } from "../image.js"
 import { Instance } from "../instance/service.js"
 import { Mime } from "../mime.js"
+import { OkuMemory } from "../okutobus/memory.js"
 import { OkuMentions } from "../okutobus/mentions.js"
 import { Plugin } from "../plugin/service.js"
 import { PluginHooks } from "../plugin/hooks.js"
@@ -51,6 +52,9 @@ export const prepare = Effect.fn("SessionPrompt.prepare")(function* (request: {
       delivery: request.input.delivery ?? "steer",
     })
     const input = event.prompt
+    // Okutobus (OkuCode) FR-35: "# rule" saves the rule to project memory; the model only confirms it.
+    const remembered = OkuMemory.handle(input.text, request.session.location.directory)
+    if (remembered) input.text = remembered
     const given = input.files
       ? yield* Effect.forEach(input.files, materializeAttachment, { concurrency: 8 })
       : undefined

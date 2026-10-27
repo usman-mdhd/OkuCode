@@ -1,6 +1,7 @@
 // Okutobus (OkuCode) SRS FR-03: when the Plan approval bar should show.
 export const PLAN_AGENT = "plan"
-export const APPROVAL_TEXT = "The plan is approved. Carry it out now, step by step, and tell me when each step is done."
+export const APPROVAL_TEXT =
+  "The plan is approved. Make the changes now using your tools (write or edit the files). Only after the files are changed, give a short summary of what you did."
 
 type Message = { type: string; agent?: string }
 

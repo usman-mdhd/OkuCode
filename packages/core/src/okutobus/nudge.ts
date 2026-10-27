@@ -6,6 +6,7 @@ export * as OkuNudge from "./nudge.js"
 // short reminder and lets the model try again, instead of stopping.
 
 import type { SessionMessage } from "../session/message.js"
+import { OkuMemory } from "./memory.js"
 
 export const TEXT =
   "You said what you would do but did not call a tool, so nothing happened. Do it now by calling the right tool " +
@@ -24,7 +25,11 @@ export function decide(messages: readonly SessionMessage.Info[]): string | undef
   if (latest.content.some((part) => part.type === "tool")) return undefined
   // At most one reminder per user message.
   for (const message of messages.slice(1)) {
-    if (message.type === "user") break
+    // A "# rule" message only needs a one-line confirmation ("I will use tabs"), never a tool call.
+    if (message.type === "user") {
+      if (OkuMemory.isConfirmation(message.text)) return undefined
+      break
+    }
     if (message.type === "synthetic" && message.text === TEXT) return undefined
   }
   const text = latest.content.flatMap((part) => (part.type === "text" ? [part.text] : [])).join("\n")
