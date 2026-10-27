@@ -6,20 +6,7 @@ import type { ComposerAdapter } from "@/composer/adapter"
 import type { ComposerModel } from "@/composer/model"
 import type { SessionModel } from "@/session/model"
 
-export const PLAN_AGENT = "plan"
-export const APPROVAL_TEXT = "The plan is approved. Carry it out now, step by step, and tell me when each step is done."
-
-type Message = { type: string }
-
-/** True when the last real turn is an assistant reply, so there is a plan to approve. */
-export function planReady(messages: ReadonlyArray<Message>) {
-  for (let index = messages.length - 1; index >= 0; index--) {
-    const type = messages[index]!.type
-    if (type === "assistant") return true
-    if (type === "user") return false
-  }
-  return false
-}
+import { APPROVAL_TEXT, PLAN_AGENT, planReady } from "./plan-ready"
 
 export function PlanApprovalBar(props: { session: SessionModel; adapter: ComposerAdapter; composer: ComposerModel }) {
   const controls = () => props.adapter.controls()
