@@ -87,6 +87,11 @@ export const Definitions = {
   "diff.toggle_view": keybind("v", "Toggle diff viewer split or unified view"),
   "diff.toggle_fullscreen": keybind("f", "Toggle diff viewer full screen"),
   "diff.mark_reviewed": keybind("m", "Toggle selected diff file reviewed"),
+  // Okutobus (OkuCode) FR-29: stage hunks and files from the diff viewer.
+  "diff.stage_hunk": keybind("a", "Stage selected change"),
+  "diff.unstage_hunk": keybind("u", "Unstage selected change"),
+  "diff.stage_file": keybind("shift+a", "Stage selected file"),
+  "diff.unstage_file": keybind("shift+u", "Unstage selected file"),
   "diff.help": keybind("?,shift+?,shift+/", "Show more diff viewer shortcuts"),
 
   "prompt.editor": keybind("<leader>e", "Open external editor"),

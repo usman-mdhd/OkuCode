@@ -28,6 +28,7 @@ import { type DiffSource, useConfig } from "../../config"
 import { locationKey } from "../../context/data"
 import { useTheme, useThemes } from "../../context/theme"
 import { PatchDiff, type PatchDiffRef } from "../../component/patch-diff"
+import { stageFile, stageHunk } from "../../util/okucode-stage"
 import {
   allExpandedFileTreeDirectories,
   buildFileTree,
@@ -193,6 +194,7 @@ function DiffViewer(props: {
   return (
     <DiffViewerContent
       context={props.context}
+      directory={location().directory}
       files={result()?.files ?? []}
       loading={diff.loading}
       error={diff.error}
@@ -305,6 +307,8 @@ type DiffPreferences = { tree?: boolean; single?: boolean; view?: "auto" | DiffV
 
 export function DiffViewerContent(props: {
   context: Plugin.Context
+  /** Okutobus: the project folder, used to stage changes (FR-29). */
+  directory?: string
   files: readonly DiffFile[]
   loading?: boolean
   error?: unknown
@@ -585,6 +589,26 @@ export function DiffViewerContent(props: {
     props.onClose()
   }
 
+  // Okutobus (OkuCode) FR-29: staging works on uncommitted changes only ("Uncommitted" source).
+  const stage = (what: "hunk" | "file", unstage: boolean) => {
+    const toast = (variant: "success" | "error" | "info", message: string) =>
+      props.context.ui.toast.show({ variant, message })
+    const directory = props.directory
+    if (!directory) return toast("error", "No project folder for this diff.")
+    if (props.mode !== "working") return toast("info", "Switch the source to Uncommitted (press d) to stage changes.")
+    const picked = selectedHunk()
+    const fileIndex = what === "hunk" ? picked?.fileIndex : (picked?.fileIndex ?? selectedFileIndex() ?? currentPatchFileIndex())
+    const entry = fileIndex === undefined ? undefined : files()[fileIndex]
+    if (!entry) return toast("info", what === "hunk" ? "Press ] or [ to pick a change first." : "Pick a file first.")
+    const result =
+      what === "file"
+        ? stageFile(directory, entry.file, unstage)
+        : entry.patch
+          ? stageHunk(directory, entry.file, entry.patch, picked!.hunkIndex, unstage)
+          : ({ ok: false, message: "This file has no text changes to stage." } as const)
+    toast(result.ok ? "success" : "error", result.message)
+  }
+
   const commands: KeymapCommand[] = [
     {
       id: "diff.close",
@@ -693,6 +717,31 @@ export function DiffViewerContent(props: {
         if (fileIndex !== undefined && fileIndex === exhaustedFileIndex()) return
         toggleFileReviewed(fileIndex)
       },
+    },
+    // Okutobus (OkuCode) FR-29: stage the selected change (hunk) or the whole file, like `git add -p`.
+    {
+      id: "diff.stage_hunk",
+      title: "Stage selected change",
+      group: "VCS",
+      run: () => stage("hunk", false),
+    },
+    {
+      id: "diff.unstage_hunk",
+      title: "Unstage selected change",
+      group: "VCS",
+      run: () => stage("hunk", true),
+    },
+    {
+      id: "diff.stage_file",
+      title: "Stage selected file",
+      group: "VCS",
+      run: () => stage("file", false),
+    },
+    {
+      id: "diff.unstage_file",
+      title: "Unstage selected file",
+      group: "VCS",
+      run: () => stage("file", true),
     },
     {
       id: "diff.toggle_file_tree",
@@ -1234,6 +1283,8 @@ function DiffViewerHelpDialog(props: { context: Plugin.Context; single: boolean;
           label: props.single ? "Review + next / reopen" : "Review + collapse / reopen",
         },
         { shortcut: shortcut("diff.next_hunk", "diff.previous_hunk"), label: "Next / previous change" },
+        { shortcut: shortcut("diff.stage_hunk", "diff.unstage_hunk"), label: "Stage / unstage change" },
+        { shortcut: shortcut("diff.stage_file", "diff.unstage_file"), label: "Stage / unstage file" },
         { shortcut: () => "right-click", label: "File menu (heading or tree)" },
       ],
     },
