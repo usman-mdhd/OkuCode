@@ -487,10 +487,14 @@ export function DiffViewerContent(props: {
         : offset === 1
           ? hunks.find((hunk) => hunk.contentY > contentTop)
           : hunks.findLast((hunk) => hunk.contentY < contentTop)
-    if (!next) return
-    selectPatchFile(next.fileIndex)
-    patchScroll.scrollTo(Math.max(0, next.contentY - FILE_HEADER_HEIGHT))
-    setSelectedHunk({ fileIndex: next.fileIndex, hunkIndex: next.hunkIndex, scrollTop: patchScroll.scrollTop })
+    // Okutobus (OkuCode) FR-29: with nothing picked yet, a change already at the top of the screen
+    // (e.g. a file with only one change) is picked instead of doing nothing.
+    const target =
+      next ?? (selectedIndex === -1 ? hunks.find((hunk) => hunk.contentY >= patchScroll.scrollTop) : undefined)
+    if (!target) return
+    selectPatchFile(target.fileIndex)
+    patchScroll.scrollTo(Math.max(0, target.contentY - FILE_HEADER_HEIGHT))
+    setSelectedHunk({ fileIndex: target.fileIndex, hunkIndex: target.hunkIndex, scrollTop: patchScroll.scrollTop })
   }
 
   const firstPatchFileIndex = () => patchFileIndexes()[0]
