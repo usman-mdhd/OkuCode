@@ -54,6 +54,6 @@ export function signInError(search: string) {
   if (code === "not_invited")
     return `${email ?? "This Google account"} hasn't been added to OkuCode yet. Ask your admin to invite you.`
   if (code === "disabled") return `Access for ${email ?? "this account"} is turned off. Ask your admin.`
-  if (code === "google_not_set_up") return "Google sign-in isn't set up yet. An admin can set it up in the admin panel."
+  if (code === "google_not_set_up") return "Google sign-in isn't set up yet. An admin can set it up in Settings → Team."
   return "Google sign-in didn't finish. Please try again."
 }

@@ -12,6 +12,8 @@ export type SettingsRootTab =
   | "experimental"
   | "gui-extensions"
   | "about"
+  /** Okutobus: team users, policy and sign-in setup (admins and team leads). */
+  | "team"
 
 declare const extensionTab: unique symbol
 
@@ -60,6 +62,7 @@ const rootTabs: Record<SettingsRootTab, true> = {
   experimental: true,
   "gui-extensions": true,
   about: true,
+  team: true,
 }
 
 const serverTabs: Record<SettingsServerTab, true> = {

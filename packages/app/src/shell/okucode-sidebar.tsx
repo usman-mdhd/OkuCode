@@ -3,14 +3,14 @@
 import { useLocation, useNavigate } from "@solidjs/router"
 import { Mark } from "@opencode/ui/logo"
 import { createMemo, createResource, createSignal, For, Show } from "solid-js"
-import { adminPanelUrl, fetchMe, signOut } from "@/okutobus/account"
+import { fetchMe, signOut } from "@/okutobus/account"
 import { createHomeController } from "@/home/model"
 import { createHomeProjectsController } from "@/home/projects/controller"
 import { createHomeSessionsController, type HomeSessionRecord } from "@/home/sessions/controller"
 import { folderName } from "@/home/hero"
 import { userName } from "@/home/user-name"
 import { sessionTitle } from "@/session/title"
-import { useSettingsCommand } from "@/settings/command"
+import { useSettingsCommand, useSettingsDialog } from "@/settings/command"
 import { usePlatform } from "@/runtime/platform/platform"
 
 const COLLAPSED_KEY = "okucode.sidebar.collapsed"
@@ -66,6 +66,7 @@ export function OkuCodeSidebar() {
   const navigate = useNavigate()
   const location = useLocation()
   const openSettings = useSettingsCommand()
+  const openTeam = useSettingsDialog("team")
   const home = createHomeController()
   const projects = createHomeProjectsController(home)
   const sessions = createHomeSessionsController(home)
@@ -215,9 +216,9 @@ export function OkuCodeSidebar() {
             {/* Okutobus FR-57: admins and team leads manage the team and its policy here. */}
             <Show when={(me()?.role === "admin" || me()?.role === "lead") && serverUrl()}>
               {(url) => (
-                <button type="button" class={row} onClick={() => platform.openExternal(adminPanelUrl(url()))}>
+                <button type="button" class={row} onClick={() => openTeam()}>
                   <Icon path={ICONS.shield} />
-                  {me()?.role === "admin" ? "Admin panel" : "Team panel"}
+                  Team
                 </button>
               )}
             </Show>

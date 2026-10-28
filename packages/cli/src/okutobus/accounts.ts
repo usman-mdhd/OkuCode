@@ -466,6 +466,9 @@ export function createAccounts(input: {
         const me = currentUser(request)
         return me ? json(200, { ...publicView(me), owner: me.email === OWNER }) : json(401, { error: "Not signed in." })
       }
+      // FR-57: team admin lives in the web app (Settings → Team). The old address goes there.
+      if ((path === "/okucode/admin" || path === "/okucode/admin/") && request.url.searchParams.get("classic") !== "1")
+        return redirect("/settings?tab=team")
       if (path === "/okucode/admin" || path === "/okucode/admin/")
         return {
           status: 200,

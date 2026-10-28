@@ -18,10 +18,10 @@ export const APPROVAL_OPTIONS: { value: ApprovalMode; label: string; hint: strin
   },
 ]
 
-type Http = { url: string; password?: string }
+export type Http = { url: string; password?: string }
 
 // The server this window is connected to (with its password when signed in with one).
-function useCurrentServer() {
+export function useCurrentServer() {
   const servers = useServers()
   return (): Http => {
     const list = servers.visible.flatMap((conn) => (conn.type === "http" ? [conn.http] : []))
@@ -31,7 +31,7 @@ function useCurrentServer() {
 }
 
 const endpoint = (http: Http) => `${http.url.replace(/\/+$/, "")}/okucode/api/approval`
-const headers = (http: Http, json = false) => {
+export const headers = (http: Http, json = false) => {
   const value: Record<string, string> = json ? { "content-type": "application/json" } : {}
   if (http.password) value.authorization = `Basic ${btoa(`opencode:${http.password}`)}`
   return value

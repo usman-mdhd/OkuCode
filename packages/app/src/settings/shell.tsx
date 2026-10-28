@@ -3,6 +3,7 @@ import { useDialog } from "@opencode/ui/context/dialog"
 import {
   createEffect,
   createMemo,
+  createResource,
   lazy,
   on,
   onCleanup,
@@ -48,6 +49,9 @@ import { settingsViewRedirect } from "./route"
 import { pageIcons } from "./pages"
 import { revealSettingsSearch } from "./search-reveal"
 import { ExtensionSettingsPages } from "@/runtime/extension/settings-page-view"
+import { fetchMe } from "@/okutobus/account"
+import { SettingsTeam } from "@/okutobus/team-settings"
+import { useServers } from "@/runtime/server/registry"
 import "@/settings/settings.css"
 
 const GuiExtensionsSettings = import.meta.env.DEV
@@ -283,7 +287,19 @@ function RootSettings() {
       <DialogServer mode="add" onSave={(server) => surface.openServer(ServerConnection.key(server))} />
     ))
 
+  // Okutobus: admins and team leads manage the team here (no separate admin page).
+  const registry = useServers()
+  const [me] = createResource(
+    () => registry.visible.flatMap((conn) => (conn.type === "http" ? [conn.http] : []))[0],
+    (http) => fetchMe(http),
+  )
+  const teamMember = () => {
+    const value = me()
+    return value && (value.role === "admin" || value.role === "lead") ? value : undefined
+  }
+
   const groups = createMemo<SettingsNavGroup[]>(() => [
+    ...(teamMember() ? [{ items: [{ value: "team", icon: pageIcons.team, label: language.t("settings.tab.team") }] }] : []),
     {
       items: [
         ...rootClientTabs.map((item) => ({ ...item, label: language.t(item.label) })),
@@ -378,6 +394,13 @@ function RootSettings() {
           </Suspense>
         </Tabs.Content>
       )}
+      <Show when={teamMember()}>
+        {(value) => (
+          <Tabs.Content value="team" class="settings-panel">
+            <SettingsTeam me={value()} />
+          </Tabs.Content>
+        )}
+      </Show>
       <Tabs.Content value="about" class="settings-panel settings-about">
         <SettingsAbout active={surface.view().tab === "about"} />
       </Tabs.Content>
