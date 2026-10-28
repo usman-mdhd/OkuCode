@@ -48,6 +48,9 @@ describe("Okutobus test loop (FR-21)", () => {
   test("asks to fix the code when the tests failed, and stops when they pass", () => {
     expect(OkuTestLoop.decide([assistant(ran(1)), assistant(edit), user()], dir)).toContain("tests failed")
     expect(OkuTestLoop.decide([assistant(ran(0)), assistant(edit), user()], dir)).toBeUndefined()
+    // Installing pytest is not a test run: the failed run still needs a fix and a new run.
+    const install = tool("shell", { command: "python3 -m pip install pytest" }, { metadata: { exit: 0 } })
+    expect(OkuTestLoop.decide([assistant(install), assistant(ran(1)), assistant(edit), user()], dir)).toContain("tests failed")
     // A new change after a passing run needs another run.
     expect(OkuTestLoop.decide([assistant(edit), assistant(ran(0)), assistant(edit), user()], dir)).toContain("Run")
   })

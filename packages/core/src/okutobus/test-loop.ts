@@ -19,6 +19,8 @@ const CODE =
 const EDIT_TOOLS = new Set(["write", "edit", "patch"])
 const SHELL_TOOLS = new Set(["shell", "bash"])
 // Letters-only boundaries so "python test_calc.py" and "npm run test:unit" count as test runs.
+// Installing a test tool ("pip install pytest") is not a test run.
+const INSTALL = /\b(?:pip3?|uv|npm|pnpm|yarn|bun|brew|apt(?:-get)?|cargo|gem|go)\s+(?:install|add|i|get)\b/i
 const TEST_RUN = /(?:^|[^a-z])(?:tests?|pytest|jest|vitest|mocha|unittest|rspec|phpunit)(?:[^a-z]|$)/i
 
 function settings(): { autoTest?: unknown; testCommand?: unknown } {
@@ -87,7 +89,7 @@ function events(messages: readonly SessionMessage.Info[]) {
         if (part.name === "patch" || CODE.test(file)) result.push({ kind: "edit" })
         continue
       }
-      if (!SHELL_TOOLS.has(part.name) || !TEST_RUN.test(String(input.command ?? ""))) continue
+      if (!SHELL_TOOLS.has(part.name) || !TEST_RUN.test(String(input.command ?? "")) || INSTALL.test(String(input.command ?? ""))) continue
       if (part.state.status === "running") continue
       if (part.state.status === "error" && part.state.metadata?.exit === undefined) {
         result.push({ kind: "test", status: "declined" })
