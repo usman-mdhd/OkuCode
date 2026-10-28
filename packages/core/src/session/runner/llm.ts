@@ -31,6 +31,7 @@ import { ToolOutput } from "../../tool-output.js"
 import { Plugin } from "../../plugin.js"
 import { MAX_STEPS_PROMPT } from "./max-steps.js"
 import { OkuNudge } from "../../okutobus/nudge.js"
+import { OkuTestLoop } from "../../okutobus/test-loop.js"
 
 const CONTINUE_AFTER_INCOMPLETE_STREAM =
   "The previous response was interrupted. Continue from where you left off without repeating completed content."
@@ -279,11 +280,12 @@ const layer = Layer.effect(
                 ),
               )
               .orderBy(desc(SessionMessageTable.seq))
-              .limit(8)
+              .limit(40)
               .all()
               .pipe(Effect.orDie)
             const recent = yield* Effect.forEach(rows, SessionHistory.decodeMessageRow)
-            const nudge = OkuNudge.decide(recent)
+            // Okutobus FR-21: after code changes, have the model run the tests and fix failures.
+            const nudge = OkuNudge.decide(recent) ?? OkuTestLoop.decide(recent, loaded.session.location.directory)
             if (!nudge) return false
             yield* bus.publish(SessionEvent.Synthetic, { sessionID, text: nudge })
             assistantMessageID = SessionMessage.ID.create()
