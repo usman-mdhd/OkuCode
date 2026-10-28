@@ -24,6 +24,9 @@ import { SessionModelRequest } from "./model-request.js"
 import { SessionRunnerModel } from "./runner/model.js"
 import { SessionSchema } from "./schema.js"
 import { SessionStore } from "./store.js"
+import { SessionMessageTable } from "./sql.js"
+import { OkuRouting } from "../okutobus/routing.js"
+import { and, desc, eq, inArray } from "drizzle-orm"
 
 export interface Selection {
   readonly session: SessionSchema.Info
@@ -91,6 +94,16 @@ const layer = Layer.effect(
 
     const resolveModel = (session: SessionSchema.Info) => models.resolve(session, model.available)
 
+    // Okutobus FR-46: the small model from okucode.json, resolved like a session model; undefined when unset or missing.
+    const resolveSmall = Effect.fn("SessionContext.resolveSmall")(function* (session: SessionSchema.Info) {
+      const small = OkuRouting.smallModel()
+      if (!small) return undefined
+      return yield* resolveModel({
+        ...session,
+        model: Model.Ref.make({ providerID: small.providerID as never, id: small.id as never }),
+      }).pipe(Effect.orElseSucceed(() => undefined))
+    })
+
     const selectTitle = Effect.fn("SessionContext.selectTitle")(function* (session: SessionSchema.Info) {
       const agent = yield* agents.get(Agent.ID.make("title"))
       if (!agent) return
@@ -98,6 +111,11 @@ const layer = Layer.effect(
       const info = yield* Effect.gen(function* () {
         if (agent.model) return yield* model.get(agent.model.providerID, agent.model.id)
         if (!primary) return
+        const small = OkuRouting.smallModel()
+        if (small) {
+          const configured = yield* model.get(small.providerID as never, small.id as never)
+          if (configured) return configured
+        }
         return yield* model.small(primary.ref.providerID)
       })
       const variant =
@@ -159,8 +177,26 @@ const layer = Layer.effect(
       }
     })
 
+    // Okutobus FR-46: a short general question goes to the small model until a tool runs.
+    const routed = Effect.fn("SessionContext.routed")(function* (session: SessionSchema.Info) {
+      if (!OkuRouting.smallModel()) return undefined
+      const rows = yield* db
+        .select()
+        .from(SessionMessageTable)
+        .where(and(eq(SessionMessageTable.session_id, session.id), inArray(SessionMessageTable.type, ["user", "assistant"])))
+        .orderBy(desc(SessionMessageTable.seq))
+        .limit(20)
+        .all()
+        .pipe(Effect.orDie)
+      const recent = yield* Effect.forEach(rows, SessionHistory.decodeMessageRow)
+      if (!OkuRouting.useSmall(recent)) return undefined
+      return yield* resolveSmall(session)
+    })
+
     const load = Effect.fn("SessionContext.load")(function* (selection: Selection) {
-      const model = yield* resolveModel(selection.session)
+      const model =
+        (yield* routed(selection.session).pipe(Effect.orElseSucceed(() => undefined))) ??
+        (yield* resolveModel(selection.session))
       const history = yield* SessionHistory.entriesForRunner(
         db,
         selection.session.id,
