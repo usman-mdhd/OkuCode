@@ -1,10 +1,14 @@
 // Okutobus (OkuCode): VS Code extension.
-// - OkuCode: Open (Cmd+Esc): OkuCode in a terminal beside the editor, in the open project folder.
-// - OkuCode: Open Chat Panel: the OkuCode chat page inside VS Code (starts `okucode web` when needed).
-// - OkuCode: Add File to Chat (Cmd+Alt+K): sends @file or @file#L10-20 for the current file/selection.
+// - OkuCode chat panel (FR-53): the OkuCode icon in the activity bar. Chats about the open folder, approves commands in
+//   the panel, and shows every file change as a VS Code diff with Undo. Starts its own `okucode serve` in the background.
+// - OkuCode: Open in Terminal (Cmd+Esc): the terminal version beside the editor.
+// - OkuCode: Open Web App: the full OkuCode web page inside VS Code (starts `okucode web` when needed).
+// - OkuCode: Add File to Chat (Cmd+Alt+K): adds @file or @file#L10-20 for the current file/selection to the panel.
 // - Right-click a file or selection: Ask OkuCode about this.
 import * as net from "node:net"
 import * as vscode from "vscode"
+import { BEFORE_SCHEME, ChatView, fileReference as editorReference } from "./chat"
+import { OkuServer } from "./server"
 
 const TERMINAL_NAME = "OkuCode"
 const SERVER_TERMINAL_NAME = "OkuCode server"
@@ -15,6 +19,7 @@ export function activate(context: vscode.ExtensionContext) {
   const config = () => vscode.workspace.getConfiguration("okucode")
   const command = () => config().get<string>("command") || "okucode"
   const port = () => config().get<number>("port") || 4096
+  const panelPort = () => config().get<number>("panelPort") || 4097
 
   const icon = {
     light: vscode.Uri.file(context.asAbsolutePath("images/button-dark.svg")),
@@ -102,6 +107,21 @@ export function activate(context: vscode.ExtensionContext) {
     await vscode.commands.executeCommand("simpleBrowser.show", url)
   }
 
+  const server = new OkuServer(context, { command, port: panelPort })
+  const chat = new ChatView(context, server, folder)
+  context.subscriptions.push(
+    server,
+    chat,
+    vscode.window.registerWebviewViewProvider("okucode.chat", chat, { webviewOptions: { retainContextWhenHidden: true } }),
+    vscode.workspace.registerTextDocumentContentProvider(BEFORE_SCHEME, chat),
+    vscode.commands.registerCommand("okucode.focusChat", () => vscode.commands.executeCommand("okucode.chat.focus")),
+    vscode.commands.registerCommand("okucode.addToChat", () => {
+      const editor = vscode.window.activeTextEditor
+      if (!editor) return
+      void chat.insert(`${editorReference(editor)} `)
+    }),
+  )
+
   context.subscriptions.push(
     vscode.commands.registerCommand("okucode.openTerminal", () => {
       const existing = okuTerminal()
@@ -130,12 +150,7 @@ export function activate(context: vscode.ExtensionContext) {
         placeHolder: "e.g. Explain this code, find bugs, add tests",
       })
       if (!question) return
-      const existing = okuTerminal()
-      const terminal = existing ?? openTerminal()
-      // A new terminal needs a moment for OkuCode to start before it can take the question.
-      if (!existing) await new Promise((resolve) => setTimeout(resolve, 4000))
-      terminal.show()
-      terminal.sendText(`${reference} ${question}`)
+      await chat.insert(`${reference} ${question}`, true)
     }),
   )
 }

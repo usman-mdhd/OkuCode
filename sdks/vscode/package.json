@@ -1,8 +1,8 @@
 {
   "name": "okucode",
   "displayName": "OkuCode",
-  "description": "OkuCode, the Okutobus AI coding agent, inside VS Code",
-  "version": "0.1.0",
+  "description": "OkuCode, the Okutobus AI coding agent, inside VS Code: chat panel, approvals and diffs",
+  "version": "0.2.0",
   "publisher": "okutobus",
   "repository": {
     "type": "git",
@@ -23,8 +23,17 @@
   "contributes": {
     "commands": [
       {
+        "command": "okucode.focusChat",
+        "title": "OkuCode: Open Chat",
+        "icon": "$(comment-discussion)"
+      },
+      {
+        "command": "okucode.addToChat",
+        "title": "OkuCode: Add File to Chat"
+      },
+      {
         "command": "okucode.openTerminal",
-        "title": "OkuCode: Open",
+        "title": "OkuCode: Open in Terminal",
         "icon": {
           "light": "images/button-dark.svg",
           "dark": "images/button-light.svg"
@@ -40,11 +49,11 @@
       },
       {
         "command": "okucode.openChatPanel",
-        "title": "OkuCode: Open Chat Panel"
+        "title": "OkuCode: Open Web App"
       },
       {
         "command": "okucode.addFilepathToTerminal",
-        "title": "OkuCode: Add File to Chat"
+        "title": "OkuCode: Add File to Terminal"
       },
       {
         "command": "okucode.askAboutFile",
@@ -64,7 +73,7 @@
           "group": "okucode@1"
         },
         {
-          "command": "okucode.addFilepathToTerminal",
+          "command": "okucode.addToChat",
           "group": "okucode@2"
         }
       ],
@@ -88,9 +97,14 @@
         "mac": "cmd+shift+escape"
       },
       {
-        "command": "okucode.addFilepathToTerminal",
+        "command": "okucode.addToChat",
         "key": "ctrl+alt+k",
         "mac": "cmd+alt+k"
+      },
+      {
+        "command": "okucode.focusChat",
+        "key": "ctrl+alt+o",
+        "mac": "cmd+alt+o"
       }
     ],
     "configuration": {
@@ -104,9 +118,37 @@
         "okucode.port": {
           "type": "number",
           "default": 4096,
-          "description": "Port of the OkuCode chat page (okucode web)."
+          "description": "Port of the OkuCode web app (okucode web), used by \"OkuCode: Open Web App\"."
+        },
+        "okucode.panelPort": {
+          "type": "number",
+          "default": 4097,
+          "description": "Port of the background OkuCode server the chat panel starts (okucode serve)."
+        },
+        "okucode.showDiffs": {
+          "type": "boolean",
+          "default": true,
+          "description": "Open a diff (before \u2194 after) whenever OkuCode changes a file."
         }
       }
+    },
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "okucode",
+          "title": "OkuCode",
+          "icon": "images/activity.svg"
+        }
+      ]
+    },
+    "views": {
+      "okucode": [
+        {
+          "type": "webview",
+          "id": "okucode.chat",
+          "name": "Chat"
+        }
+      ]
     }
   },
   "scripts": {
