@@ -1,11 +1,15 @@
 // Okutobus (OkuCode): team accounts kept on the machine that runs `okucode web`.
 //   <data>/okucode/users.json   users, roles and the secret that signs sign-in cookies (owner-only file)
 //   <config>/okucode.json       Google sign-in and Gmail settings, filled from the admin panel (owner-only file)
-import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs"
+//   <config>/OKUCODE-TEAM.md    FR-57 team rules from the Policy tab; OkuCode adds them to every chat
+import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs"
 import { randomBytes } from "node:crypto"
 import path from "node:path"
 
-export type Role = "admin" | "member"
+// FR-57: a lead manages members and the team policy; only admins manage admins, leads and the sign-in setup.
+export type Role = "admin" | "lead" | "member"
+export const ROLES: readonly Role[] = ["admin", "lead", "member"]
+export const isRole = (value: unknown): value is Role => typeof value === "string" && ROLES.includes(value as Role)
 export type Status = "invited" | "active" | "disabled"
 
 export type User = {
@@ -29,6 +33,11 @@ export type Settings = {
   smtp?: { host?: string; port?: number; insecure?: boolean }
   /** FR-22 approval mode: "ask", "auto-edit" or "full-auto" (read by core's OkuApproval). */
   approvalMode?: string
+  /** FR-21: run the tests after code changes (read by core's OkuTestLoop). Unset means on. */
+  autoTest?: boolean
+  /** FR-46: the small model ("provider/model") and whether short questions go to it (read by core's OkuRouting). */
+  smallModel?: string
+  routing?: boolean
 }
 
 type File = { secret: string; users: User[] }
@@ -59,10 +68,12 @@ function readJson<T>(file: string): T | undefined {
 export class Store {
   readonly usersFile: string
   readonly settingsFile: string
+  readonly teamRulesFile: string
 
   constructor(dirs: { data: string; config: string }) {
     this.usersFile = path.join(dirs.data, "okucode", "users.json")
     this.settingsFile = path.join(dirs.config, "okucode.json")
+    this.teamRulesFile = path.join(dirs.config, "OKUCODE-TEAM.md")
   }
 
   private load(): File {
@@ -139,6 +150,22 @@ export class Store {
 
   saveSettings(next: Settings) {
     writePrivate(this.settingsFile, next)
+  }
+
+  /** FR-57 team rules (Markdown), or "" when none are set. */
+  teamRules() {
+    try {
+      return readFileSync(this.teamRulesFile, "utf8")
+    } catch {
+      return ""
+    }
+  }
+
+  saveTeamRules(text: string) {
+    const value = text.replace(/\r\n/g, "\n").trim()
+    if (!value) return rmSync(this.teamRulesFile, { force: true })
+    mkdirSync(path.dirname(this.teamRulesFile), { recursive: true })
+    writeFileSync(this.teamRulesFile, `${value}\n`)
   }
 }
 

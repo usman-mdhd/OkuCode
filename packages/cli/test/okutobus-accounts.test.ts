@@ -176,6 +176,48 @@ describe("OkuCode accounts", () => {
     expect((await t.call("PUT", "/okucode/api/approval", { body: { mode: "full-auto" } })).status).toBe(403)
   })
 
+  test("team leads manage members and the policy, not admins or setup (FR-57)", async () => {
+    const t = setup()
+    await t.call("POST", "/okucode/auth/password", { body: { password: PASSWORD } })
+    await t.call("POST", "/okucode/api/users", { body: { email: "boss@okutobus.com", role: "admin" } })
+    await t.call("POST", "/okucode/api/users", { body: { email: "dev@okutobus.com" } })
+    const lead = await t.call("POST", "/okucode/api/users", { body: { email: "new@okutobus.com", role: "lead" } })
+    expect(lead.data.user.role).toBe("lead")
+    await googleSignIn(t)
+    t.store.saveSettings({ ...t.store.settings(), smallModel: "ollama/qwen2.5-coder:3b" })
+
+    // Members: yes. Admins, leads, roles and the sign-in setup: no.
+    expect((await t.call("GET", "/okucode/api/users")).status).toBe(200)
+    expect((await t.call("POST", "/okucode/api/users", { body: { email: "x@okutobus.com" } })).data.user.role).toBe("member")
+    expect((await t.call("POST", "/okucode/api/users", { body: { email: "y@okutobus.com", role: "admin" } })).status).toBe(403)
+    expect((await t.call("PATCH", "/okucode/api/users/dev%40okutobus.com", { body: { disabled: true } })).data.user.status).toBe("disabled")
+    expect((await t.call("PATCH", "/okucode/api/users/dev%40okutobus.com", { body: { role: "admin" } })).status).toBe(403)
+    expect((await t.call("PATCH", "/okucode/api/users/boss%40okutobus.com", { body: { disabled: true } })).status).toBe(403)
+    expect((await t.call("DELETE", "/okucode/api/users/boss%40okutobus.com")).status).toBe(403)
+    expect((await t.call("DELETE", "/okucode/api/users/dev%40okutobus.com")).status).toBe(200)
+    expect((await t.call("GET", "/okucode/api/settings")).status).toBe(403)
+    expect((await t.call("PUT", "/okucode/api/settings", { body: {} })).status).toBe(403)
+
+    // The policy applies to every chat: approval mode, auto-test, routing and team rules.
+    expect((await t.call("GET", "/okucode/api/policy")).data).toEqual({
+      approvalMode: null, autoTest: true, routing: true, smallModel: "ollama/qwen2.5-coder:3b", teamRules: "",
+    })
+    expect((await t.call("PUT", "/okucode/api/policy", { body: { approvalMode: "yolo" } })).status).toBe(400)
+    const saved = await t.call("PUT", "/okucode/api/policy", {
+      body: { approvalMode: "auto-edit", autoTest: false, routing: false, teamRules: "- Never commit to main.\r\n" },
+    })
+    expect(saved.status).toBe(200)
+    expect(t.store.settings()).toMatchObject({ approvalMode: "auto-edit", autoTest: false, routing: false, google: { clientId: "id" } })
+    expect(t.store.teamRules()).toBe("- Never commit to main.\n")
+    await t.call("PUT", "/okucode/api/policy", { body: { teamRules: "  " } })
+    expect(t.store.teamRules()).toBe("")
+
+    // Members still cannot change the policy.
+    t.google.email = "x@okutobus.com"
+    await googleSignIn(t)
+    expect((await t.call("PUT", "/okucode/api/policy", { body: { autoTest: true } })).status).toBe(403)
+  })
+
   test("email message is valid MIME", () => {
     const body = message({
       host: "", port: 0, user: "", pass: "", from: "a@b.com", fromName: "OkuCode", to: "c@d.com",

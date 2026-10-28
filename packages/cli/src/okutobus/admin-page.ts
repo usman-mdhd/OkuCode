@@ -4,7 +4,7 @@ export const ADMIN_PAGE = /* html */ `<!doctype html>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>OkuCode Admin</title>
+<title>OkuCode Team</title>
 <style>
 :root{--bg:#f6f7f9;--card:#fff;--text:#1f2328;--muted:#6b7280;--line:#e5e7eb;--soft:#f1f3f5;--accent:#111;--accent-text:#fff;--ok:#127a3a;--ok-bg:#e7f6ec;--warn:#9a6700;--warn-bg:#fff4d6;--bad:#b42318;--bad-bg:#fdecea}
 @media (prefers-color-scheme:dark){:root{--bg:#0f1115;--card:#171a21;--text:#e6e8eb;--muted:#9aa3ae;--line:#2a2f39;--soft:#1f232b;--accent:#e6e8eb;--accent-text:#111;--ok:#5fd38a;--ok-bg:#12301f;--warn:#e3b341;--warn-bg:#33290f;--bad:#ff7b72;--bad-bg:#3a1714}}
@@ -22,6 +22,7 @@ main{max-width:980px;margin:0 auto;padding:24px 16px 48px}
 h1{font-size:20px;margin:0 0 4px}h2{font-size:15px;margin:0 0 12px}
 p.sub{color:var(--muted);margin:0 0 16px}
 .row{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+textarea{font:13px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace;color:var(--text);background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:10px;width:100%;min-height:180px;resize:vertical}
 input,select{font:inherit;color:var(--text);background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:8px 10px;min-width:0}
 input:focus,select:focus{outline:2px solid color-mix(in srgb,var(--text) 25%,transparent);outline-offset:1px}
 input[type=email]{flex:1 1 240px}
@@ -66,7 +67,9 @@ code{background:var(--soft);padding:1px 6px;border-radius:6px;font-size:12px;ove
 <script>
 const app = document.getElementById("app")
 const who = document.getElementById("who")
-const state = { tab: "users", me: null, users: [], settings: null }
+const state = { tab: "users", me: null, users: [], settings: null, policy: null }
+const ROLE_NAMES = { admin: "Admin", lead: "Team lead", member: "Member" }
+const isAdmin = () => state.me && state.me.role === "admin"
 const esc = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c])
 const when = (t) => (t ? new Date(t).toLocaleString([], { dateStyle: "medium", timeStyle: "short" }) : "—")
 
@@ -92,8 +95,8 @@ async function start() {
   } catch {
     return showLogin()
   }
-  if (state.me.role !== "admin") {
-    app.innerHTML = '<div class="login"><div class="card"><h2>Admins only</h2><p class="sub">You are signed in as ' + esc(state.me.email) + ', but only admins can open this page.</p><a class="google" href="/">Back to OkuCode</a></div></div>'
+  if (state.me.role !== "admin" && state.me.role !== "lead") {
+    app.innerHTML = '<div class="login"><div class="card"><h2>Admins and team leads only</h2><p class="sub">You are signed in as ' + esc(state.me.email) + ', but only admins and team leads can open this page.</p><a class="google" href="/">Back to OkuCode</a></div></div>'
     return
   }
   who.innerHTML = '<span class="email">' + esc(state.me.owner ? "Signed in as owner" : state.me.email) + '</span><a class="ghost" style="text-decoration:none;padding:5px 10px;border:1px solid var(--line);border-radius:8px;color:inherit" href="/">Open OkuCode</a><button class="ghost" id="logout">Sign out</button>'
@@ -105,9 +108,15 @@ async function start() {
 }
 
 async function load() {
-  const [users, settings] = await Promise.all([api("/okucode/api/users"), api("/okucode/api/settings")])
+  const [users, settings, policy] = await Promise.all([
+    api("/okucode/api/users"),
+    isAdmin() ? api("/okucode/api/settings") : Promise.resolve({ googleReady: true, gmailReady: true, leadView: true }),
+    api("/okucode/api/policy"),
+  ])
   state.users = users.users
   state.settings = settings
+  state.policy = policy
+  if (state.tab === "setup" && !isAdmin()) state.tab = "users"
   render()
 }
 
@@ -134,34 +143,39 @@ function googleIcon() {
 function render() {
   const s = state.settings
   app.innerHTML =
-    '<h1>Team</h1><p class="sub">Only people added here can sign in to OkuCode with Google.</p>' +
-    '<div class="tabs"><button class="tab ' + (state.tab === "users" ? "on" : "") + '" data-tab="users">Users (' + state.users.length + ')</button><button class="tab ' + (state.tab === "setup" ? "on" : "") + '" data-tab="setup">Setup</button></div>' +
+    '<h1>Team</h1><p class="sub">Only people added here can sign in to OkuCode with Google.' + (isAdmin() ? "" : " As a team lead you can manage members and the team policy.") + '</p>' +
+    '<div class="tabs"><button class="tab ' + (state.tab === "users" ? "on" : "") + '" data-tab="users">Users (' + state.users.length + ')</button>' +
+    '<button class="tab ' + (state.tab === "policy" ? "on" : "") + '" data-tab="policy">Policy</button>' +
+    (isAdmin() ? '<button class="tab ' + (state.tab === "setup" ? "on" : "") + '" data-tab="setup">Setup</button>' : "") + '</div>' +
     '<div id="note" class="note"></div>' +
-    (state.tab === "users" ? usersView(s) : setupView(s))
+    (state.tab === "users" ? usersView(s) : state.tab === "policy" ? policyView(state.policy) : setupView(s))
   app.querySelectorAll("[data-tab]").forEach((b) => (b.onclick = () => { state.tab = b.dataset.tab; render() }))
   if (state.tab === "users") bindUsers()
+  else if (state.tab === "policy") bindPolicy()
   else bindSetup()
 }
 
 function usersView(s) {
-  const warn = !s.googleReady || !s.gmailReady
+  const warn = isAdmin() && (!s.googleReady || !s.gmailReady)
     ? '<p class="sub" style="margin:0 0 12px">' + (!s.googleReady ? "Google sign-in is not set up yet. " : "") + (!s.gmailReady ? "Invite emails need Gmail. " : "") + '<a href="#" id="go-setup">Open Setup</a></p>'
     : ""
   const rows = state.users.map((u) => {
     const self = u.email === state.me.email
+    // A team lead manages members only.
+    const locked = !isAdmin() && u.role !== "member"
     const initial = esc((u.name || u.email).charAt(0).toUpperCase())
     return '<tr data-email="' + esc(u.email) + '">' +
       '<td><div class="person"><div class="avatar">' + (u.picture ? '<img src="' + esc(u.picture) + '" alt="" referrerpolicy="no-referrer">' : initial) + '</div><div style="min-width:0"><div>' + esc(u.name || u.email.split("@")[0]) + (self ? " (you)" : "") + '</div><div class="email">' + esc(u.email) + '</div></div></div></td>' +
-      '<td><select data-act="role" aria-label="Role"' + (self ? " disabled" : "") + '><option value="member"' + (u.role === "member" ? " selected" : "") + '>Member</option><option value="admin"' + (u.role === "admin" ? " selected" : "") + '>Admin</option></select></td>' +
+      '<td>' + (isAdmin() ? '<select data-act="role" aria-label="Role"' + (self ? " disabled" : "") + '>' + Object.keys(ROLE_NAMES).map((r) => '<option value="' + r + '"' + (u.role === r ? " selected" : "") + '>' + ROLE_NAMES[r] + '</option>').join("") + '</select>' : esc(ROLE_NAMES[u.role] || u.role)) + '</td>' +
       '<td><span class="badge ' + u.status + '">' + ({ active: "Active", invited: "Invited", disabled: "Disabled" })[u.status] + '</span></td>' +
       '<td class="hide-sm">' + when(u.lastLogin) + '</td>' +
       '<td><div class="actions">' +
-        (u.status === "invited" ? '<button class="ghost" data-act="resend"' + (s.gmailReady ? "" : " disabled title=\\"Set up Gmail first\\"") + '>' + (u.invitedAt ? "Resend invite" : "Send invite") + '</button>' : "") +
-        (self ? "" : '<button class="ghost" data-act="toggle">' + (u.status === "disabled" ? "Enable" : "Disable") + '</button><button class="ghost danger" data-act="remove">Remove</button>') +
+        (locked ? "" : u.status === "invited" ? '<button class="ghost" data-act="resend"' + (s.gmailReady ? "" : " disabled title=\\"Set up Gmail first\\"") + '>' + (u.invitedAt ? "Resend invite" : "Send invite") + '</button>' : "") +
+        (self || locked ? "" : '<button class="ghost" data-act="toggle">' + (u.status === "disabled" ? "Enable" : "Disable") + '</button><button class="ghost danger" data-act="remove">Remove</button>') +
       '</div></td></tr>'
   }).join("")
   return '<div class="card"><h2>Add a user</h2>' + warn +
-    '<form id="add" class="row"><input type="email" id="email" placeholder="name@okutobus.com" required aria-label="Email address"><select id="role" aria-label="Role"><option value="member">Member</option><option value="admin">Admin</option></select>' +
+    '<form id="add" class="row"><input type="email" id="email" placeholder="name@okutobus.com" required aria-label="Email address"><select id="role" aria-label="Role">' + (isAdmin() ? '<option value="member">Member</option><option value="lead">Team lead</option><option value="admin">Admin</option>' : '<option value="member">Member</option>') + '</select>' +
     '<label class="check"><input type="checkbox" id="invite"' + (s.gmailReady ? " checked" : " disabled") + '> Send invite email</label><button class="primary">Add user</button></form></div>' +
     '<div class="card" style="padding:8px 12px"><table><thead><tr><th>User</th><th>Role</th><th>Status</th><th class="hide-sm">Last sign-in</th><th></th></tr></thead><tbody>' +
     (rows || '<tr><td colspan="5" class="empty">No users yet. Add the first one above.</td></tr>') + '</tbody></table></div>'
@@ -192,7 +206,7 @@ function bindUsers() {
     }
     row.querySelectorAll("[data-act]").forEach((el) => {
       const kind = el.dataset.act
-      if (kind === "role") el.onchange = () => act(() => api(path, { method: "PATCH", body: JSON.stringify({ role: el.value }) }), email + " is now " + (el.value === "admin" ? "an admin" : "a member"))
+      if (kind === "role") el.onchange = () => act(() => api(path, { method: "PATCH", body: JSON.stringify({ role: el.value }) }), email + " is now " + ({ admin: "an admin", lead: "a team lead", member: "a member" })[el.value])
       if (kind === "resend") el.onclick = () => { el.disabled = true; act(() => api(path + "/resend", { method: "POST", body: "{}" }), "Invite email sent to " + email) }
       if (kind === "toggle") el.onclick = () => {
         const disabled = el.textContent === "Disable"
@@ -204,6 +218,36 @@ function bindUsers() {
       }
     })
   })
+}
+
+function policyView(p) {
+  const modes = [["ask", "Ask every time", "File changes and commands wait for an OK."], ["auto-edit", "Auto-edit", "File changes go ahead; commands still ask."], ["full-auto", "Full-auto", "Changes and commands go ahead (trusted folders only)."]]
+  return '<form id="policy"><div class="card"><h2>Team policy</h2><p class="sub">These settings apply to every chat on this OkuCode server, for every user.</p>' +
+    '<div class="field"><span>Approval mode</span><select id="approvalMode"><option value=""' + (p.approvalMode ? "" : " selected") + ' disabled>Choose…</option>' + modes.map((m) => '<option value="' + m[0] + '"' + (p.approvalMode === m[0] ? " selected" : "") + '>' + m[1] + ' — ' + m[2] + '</option>').join("") + '</select></div>' +
+    '<label class="check" style="margin-bottom:10px"><input type="checkbox" id="autoTest"' + (p.autoTest ? " checked" : "") + '> Run the tests after OkuCode changes code, and fix failures</label>' +
+    '<label class="check"><input type="checkbox" id="routing"' + (p.routing ? " checked" : "") + '> Send short general questions to the small model' + (p.smallModel ? ' (<code>' + esc(p.smallModel) + '</code>)' : ' (no small model set up)') + '</label></div>' +
+    '<div class="card"><h2>Team rules</h2><p class="sub">OkuCode follows these rules in every chat, on top of each project\\'s own OKUCODE.md. Write one rule per line.</p>' +
+    '<textarea id="teamRules" placeholder="- Use TypeScript strict mode.&#10;- Never commit directly to main.&#10;- Write unit tests for new functions.">' + esc(p.teamRules) + '</textarea></div>' +
+    '<button class="primary">Save policy</button></form>'
+}
+
+function bindPolicy() {
+  document.getElementById("policy").onsubmit = async (event) => {
+    event.preventDefault()
+    const mode = document.getElementById("approvalMode").value
+    try {
+      await api("/okucode/api/policy", { method: "PUT", body: JSON.stringify({
+        ...(mode ? { approvalMode: mode } : {}),
+        autoTest: document.getElementById("autoTest").checked,
+        routing: document.getElementById("routing").checked,
+        teamRules: document.getElementById("teamRules").value,
+      }) })
+      await load()
+      note("Policy saved. It applies to new messages in every chat.", true)
+    } catch (error) {
+      note(error.message)
+    }
+  }
 }
 
 function setupView(s) {

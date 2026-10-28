@@ -42,6 +42,8 @@ export const Plugin = define({
       const project = discovery.project && FSUtil.contains(root, start)
       const stop = FSUtil.contains(home, start) ? home : root
       const globalFile = yield* fs.resolve(join(global.config, "AGENTS.md"))
+      // Okutobus FR-57: team rules set by an admin or lead in the Policy tab apply to every chat.
+      const teamFile = yield* fs.resolve(join(global.config, "OKUCODE-TEAM.md"))
       const loaded: { current: Loaded } = { current: { type: "available", files: [] } }
       const configured: { sources: string[]; remote: Map<string, InstructionDiscovery.File> } = {
         sources: [],
@@ -59,7 +61,7 @@ export const Plugin = define({
               .filter((file) => discovery.global || file !== globalFile)
           : []),
       ]
-      for (const file of new Set(candidates)) {
+      for (const file of new Set([teamFile, ...candidates])) {
         const updates = yield* watcher.subscribe({ path: file, type: "file" })
         yield* updates.pipe(Stream.runForEach(publish), Effect.forkScoped({ startImmediately: true }))
       }
@@ -82,6 +84,12 @@ export const Plugin = define({
         if (!discovery.global || !(yield* fs.isFile(globalFile))) return []
         const file = yield* read(globalFile)
         return file instanceof InstructionDiscovery.File ? [file] : []
+      })
+
+      const teamSource = Effect.fn("ConfigInstructionPlugin.teamSource")(function* () {
+        if (!(yield* fs.isFile(teamFile))) return []
+        const file = yield* read(teamFile)
+        return file instanceof InstructionDiscovery.File && file.content.trim() ? [file] : []
       })
 
       const projectSource = Effect.fn("ConfigInstructionPlugin.projectSource")(function* () {
@@ -185,13 +193,16 @@ export const Plugin = define({
       const refresh = Effect.fn("ConfigInstructionPlugin.refresh")(
         function* (file?: string) {
           const sources = yield* Effect.all({
+            team: isolate("team", teamSource()),
             global: isolate("global", globalSource()),
             project: isolate("project", projectSource()),
             configured: isolate("configured", configuredSource()),
           })
+          // A broken team rules file is skipped rather than blocking every chat.
+          const team = Array.isArray(sources.team) ? sources.team : []
           loaded.current =
             Array.isArray(sources.global) && Array.isArray(sources.project) && Array.isArray(sources.configured)
-              ? { type: "available", files: [...sources.global, ...sources.project, ...sources.configured] }
+              ? { type: "available", files: [...team, ...sources.global, ...sources.project, ...sources.configured] }
               : { type: "unavailable" }
           if (!file) return
           yield* Effect.logDebug("instructions rescanned", {

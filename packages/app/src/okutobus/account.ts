@@ -5,7 +5,7 @@ export type Me = {
   email: string
   name?: string
   picture?: string
-  role: "admin" | "member"
+  role: "admin" | "lead" | "member"
   owner?: boolean
 }
 

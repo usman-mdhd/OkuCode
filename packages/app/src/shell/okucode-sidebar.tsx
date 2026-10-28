@@ -212,11 +212,12 @@ export function OkuCodeSidebar() {
               <Icon path={ICONS.settings} />
               Settings
             </button>
-            <Show when={me()?.role === "admin" && serverUrl()}>
+            {/* Okutobus FR-57: admins and team leads manage the team and its policy here. */}
+            <Show when={(me()?.role === "admin" || me()?.role === "lead") && serverUrl()}>
               {(url) => (
                 <button type="button" class={row} onClick={() => platform.openExternal(adminPanelUrl(url()))}>
                   <Icon path={ICONS.shield} />
-                  Admin panel
+                  {me()?.role === "admin" ? "Admin panel" : "Team panel"}
                 </button>
               )}
             </Show>

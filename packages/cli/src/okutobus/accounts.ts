@@ -9,7 +9,7 @@ import { createHmac, randomBytes, timingSafeEqual } from "node:crypto"
 import { Option } from "effect"
 import { ServerAuth } from "@opencode/server/auth"
 import { ADMIN_PAGE } from "./admin-page"
-import { activeAdmins, normalize, type Role, type Settings, type Store, type User } from "./accounts-store"
+import { activeAdmins, isRole, normalize, type Role, type Settings, type Store, type User } from "./accounts-store"
 import { send } from "./smtp"
 
 export type Request = {
@@ -279,6 +279,9 @@ export function createAccounts(input: {
 
   async function admin(request: Request, me: User, path: string): Promise<Response> {
     const by = me.email
+    // FR-57: leads manage members and the team policy; admins manage everything.
+    const isAdmin = me.role === "admin"
+    const adminOnly = () => json(403, { error: "Only admins can do this." })
     if (path === "/okucode/api/users" && request.method === "GET")
       return json(200, { users: store.list().map(publicView), me: by })
 
@@ -286,7 +289,20 @@ export function createAccounts(input: {
     if (path === "/okucode/api/approval" && request.method === "GET")
       return json(200, { mode: settings().approvalMode ?? null })
 
+    // FR-57: the team policy that applies to every chat on this server.
+    if (path === "/okucode/api/policy" && request.method === "GET") {
+      const value = settings()
+      return json(200, {
+        approvalMode: value.approvalMode ?? null,
+        autoTest: value.autoTest !== false,
+        routing: value.routing !== false,
+        smallModel: value.smallModel ?? null,
+        teamRules: store.teamRules(),
+      })
+    }
+
     if (path === "/okucode/api/settings" && request.method === "GET") {
+      if (!isAdmin) return adminOnly()
       const value = settings()
       return json(200, {
         publicUrl: value.publicUrl ?? "",
@@ -312,7 +328,26 @@ export function createAccounts(input: {
       return json(200, { mode: next.mode })
     }
 
+    if (path === "/okucode/api/policy" && request.method === "PUT") {
+      const next = await body<{ approvalMode?: string; autoTest?: boolean; routing?: boolean; teamRules?: string }>(request)
+      const value = settings()
+      if (next.approvalMode !== undefined) {
+        if (next.approvalMode !== "ask" && next.approvalMode !== "auto-edit" && next.approvalMode !== "full-auto")
+          return json(400, { error: "Approval mode must be ask, auto-edit or full-auto." })
+        value.approvalMode = next.approvalMode
+      }
+      if (typeof next.autoTest === "boolean") value.autoTest = next.autoTest
+      if (typeof next.routing === "boolean") value.routing = next.routing
+      if (typeof next.teamRules === "string") {
+        if (next.teamRules.length > 20000) return json(400, { error: "Team rules are too long (20,000 characters at most)." })
+        store.saveTeamRules(next.teamRules)
+      }
+      store.saveSettings(value)
+      return json(200, { ok: true })
+    }
+
     if (path === "/okucode/api/settings" && request.method === "PUT") {
+      if (!isAdmin) return adminOnly()
       const next = await body<{
         publicUrl?: string
         googleClientId?: string
@@ -341,7 +376,8 @@ export function createAccounts(input: {
 
     if (path === "/okucode/api/users" && request.method === "POST") {
       const next = await body<{ email?: string; role?: Role; invite?: boolean }>(request)
-      const role: Role = next.role === "admin" ? "admin" : "member"
+      const role: Role = isRole(next.role) ? next.role : "member"
+      if (!isAdmin && role !== "member") return json(403, { error: "Team leads can only add members." })
       let user: User
       try {
         user = store.add({ email: next.email ?? "", role, by, invited: false })
@@ -363,6 +399,7 @@ export function createAccounts(input: {
       const email = normalize(decodeURIComponent(match[1]!))
       const target = store.get(email)
       if (!target) return json(404, { error: "User not found." })
+      if (!isAdmin && target.role !== "member") return json(403, { error: "Team leads can only manage members." })
       if (match[2] && request.method === "POST") {
         try {
           await sendInvite(request, target, by)
@@ -382,12 +419,15 @@ export function createAccounts(input: {
       }
       if (request.method === "PATCH") {
         const next = await body<{ role?: Role; disabled?: boolean }>(request)
+        if (next.role !== undefined && !isRole(next.role)) return json(400, { error: "Role must be admin, lead or member." })
+        if (!isAdmin && next.role !== undefined && next.role !== target.role)
+          return json(403, { error: "Only admins can change roles." })
         try {
           const user = store.update(email, (item, all) => {
             const others = activeAdmins(all).filter((admin) => admin.email !== item.email)
             if (next.role && next.role !== item.role) {
               if (item.role === "admin" && others.length === 0) throw new Error("There must be at least one admin.")
-              item.role = next.role === "admin" ? "admin" : "member"
+              item.role = next.role
             }
             if (next.disabled !== undefined) {
               if (email === by) throw new Error("You can't disable yourself.")
@@ -440,7 +480,7 @@ export function createAccounts(input: {
       if (path.startsWith("/okucode/api/")) {
         const me = currentUser(request)
         if (!me) return json(401, { error: "Not signed in." })
-        if (me.role !== "admin") return json(403, { error: "Only admins can do this." })
+        if (me.role !== "admin" && me.role !== "lead") return json(403, { error: "Only admins and team leads can do this." })
         return admin(request, me, path)
       }
       return json(404, { error: "Not found." })
