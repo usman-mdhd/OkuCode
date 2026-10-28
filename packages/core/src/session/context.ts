@@ -194,9 +194,8 @@ const layer = Layer.effect(
     })
 
     const load = Effect.fn("SessionContext.load")(function* (selection: Selection) {
-      const model =
-        (yield* routed(selection.session).pipe(Effect.orElseSucceed(() => undefined))) ??
-        (yield* resolveModel(selection.session))
+      const small = yield* routed(selection.session).pipe(Effect.orElseSucceed(() => undefined))
+      const model = small ?? (yield* resolveModel(selection.session))
       const history = yield* SessionHistory.entriesForRunner(
         db,
         selection.session.id,
@@ -207,9 +206,10 @@ const layer = Layer.effect(
         session: selection.session,
         agent: selection.agent,
         model,
-        initial: history.initial,
+        // Okutobus FR-46: the small model only answers in text. Without tools it cannot invent tool calls.
+        initial: small ? `${history.initial}\n\n${OkuRouting.SMALL_NOTE}` : history.initial,
         messages: history.entries.map((entry) => entry.message),
-        tools: selection.tools,
+        tools: small ? { ...selection.tools, definitions: [] } : selection.tools,
       }
     })
 

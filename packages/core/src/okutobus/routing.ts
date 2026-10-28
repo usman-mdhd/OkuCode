@@ -20,6 +20,11 @@ function settings(): Settings {
   }
 }
 
+/** Added to the system prompt for the small model: it has no tools and must answer in plain text. */
+export const SMALL_NOTE =
+  "No tools are available for this reply. Answer the user's question directly in plain text or Markdown. " +
+  "Never write JSON or a tool call."
+
 /** The small model as provider and model ID, or undefined when none is set. */
 export function smallModel(value = settings().smallModel): { providerID: string; id: string } | undefined {
   if (typeof value !== "string") return undefined
