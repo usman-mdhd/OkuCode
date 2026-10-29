@@ -53,6 +53,8 @@ export class ChatView implements vscode.WebviewViewProvider, vscode.TextDocument
   private directory: string | undefined
   private readonly changes = new Map<string, Change>()
   private readonly pending = new Map<string, { file: string; before: string | null }[]>()
+  /** Open files' text when the last message was sent: a "before" side for folders without git history. */
+  private baseline = new Map<string, string>()
   /** Tool names by call ID: the name arrives with "tool.input.started", the input with "tool.called". */
   private readonly toolNames = new Map<string, string>()
   private readonly queue: unknown[] = []
@@ -190,6 +192,11 @@ export class ChatView implements vscode.WebviewViewProvider, vscode.TextDocument
       this.directory = directory
       await this.context.workspaceState.update(this.stateKey(directory), this.sessionID)
     }
+    this.baseline = new Map(
+      vscode.workspace.textDocuments
+        .filter((document) => document.uri.scheme === "file" && !document.isDirty)
+        .map((document) => [path.resolve(document.uri.fsPath), document.getText()]),
+    )
     this.post({ type: "user", text })
     this.post({ type: "busy", busy: true })
     await this.server.request("POST", `/api/session/${this.sessionID}/prompt`, directory, { text })
@@ -267,6 +274,12 @@ export class ChatView implements vscode.WebviewViewProvider, vscode.TextDocument
   }
 
   private toolDone(id: string, ok: boolean, content: { type: string; text?: string }[] = []) {
+    void this.finishTool(id, ok, content).catch((error) =>
+      this.post({ type: "error", text: `Could not show the change: ${(error as Error).message}` }),
+    )
+  }
+
+  private async finishTool(id: string, ok: boolean, content: { type: string; text?: string }[]) {
     const output = content
       .map((item) => item.text ?? "")
       .join("\n")
@@ -274,17 +287,44 @@ export class ChatView implements vscode.WebviewViewProvider, vscode.TextDocument
     const touched = ok ? (this.pending.get(id) ?? []) : []
     this.pending.delete(id)
     this.toolNames.delete(id)
-    const changes = touched.flatMap((item, index) => {
+    // In Auto-edit and Full-auto the file can be written before our copy was taken, so the copy already holds the new
+    // text. Then the "before" side comes from the server's record of this request's changes instead.
+    let server: Map<string, string | null> | undefined
+    const changes = []
+    for (const [index, item] of touched.entries()) {
       const after = existsSync(item.file) ? readFileSync(item.file, "utf8") : null
-      if (after === item.before) return []
+      let before = item.before
+      if (after === before) {
+        server ??= await this.turnBefore()
+        if (server.has(item.file)) before = server.get(item.file) ?? null
+        else if (this.baseline.has(item.file)) before = this.baseline.get(item.file)!
+        else continue
+        if (after === before) continue
+      }
       const key = `${id}:${index}`
-      this.changes.set(key, { file: item.file, before: item.before, after: after ?? undefined })
-      const stats = lineStats(item.before ?? "", after ?? "")
-      return [{ id: key, file: vscode.workspace.asRelativePath(item.file), ...stats, created: item.before === null }]
-    })
+      this.changes.set(key, { file: item.file, before, after: after ?? undefined })
+      const stats = lineStats(before ?? "", after ?? "")
+      changes.push({ id: key, file: vscode.workspace.asRelativePath(item.file), ...stats, created: before === null })
+    }
     this.post({ type: "toolDone", id, ok, output: output.slice(0, 4000), changes })
     if (changes.length && vscode.workspace.getConfiguration("okucode").get<boolean>("showDiffs", true))
       void this.openDiff(changes[changes.length - 1]!.id, true)
+  }
+
+  /** Each changed file's text before the current request, from the server (absolute path → text, null = new file). */
+  private async turnBefore() {
+    const result = new Map<string, string | null>()
+    if (!this.sessionID || !this.directory) return result
+    const response = await this.server
+      .request<{ data: { file: string; patch: string; status?: string }[] }>(
+        "GET",
+        `/api/session/${this.sessionID}/diff`,
+        this.directory,
+      )
+      .catch(() => ({ data: [] }))
+    for (const entry of response.data)
+      result.set(this.resolve(entry.file), entry.status === "added" ? null : beforeFromPatch(entry.patch))
+    return result
   }
 
   private async openDiff(id: string, preserveFocus = false) {
@@ -332,6 +372,29 @@ export function fileReference(editor: vscode.TextEditor) {
   return reference
 }
 
+/** The old text inside a full-file unified diff: context lines and removed lines, in order. */
+export function beforeFromPatch(patch: string) {
+  const lines: string[] = []
+  let inHunk = false
+  let noNewline = false
+  let lastOld = false
+  for (const line of patch.split("\n")) {
+    if (line.startsWith("@@")) {
+      inHunk = true
+      continue
+    }
+    if (!inHunk) continue
+    if (line.startsWith("\\")) {
+      // "\ No newline at end of file" after an old-side line.
+      if (lastOld) noNewline = true
+      continue
+    }
+    lastOld = line.startsWith(" ") || line.startsWith("-")
+    if (lastOld) lines.push(line.slice(1))
+  }
+  const text = lines.join("\n")
+  return lines.length && !noNewline ? `${text}\n` : text
+}
 /** Added and removed line counts between two texts (a simple LCS, enough for a "+3 −1" badge). */
 export function lineStats(before: string, after: string) {
   const a = before ? before.replace(/\n$/, "").split("\n") : []

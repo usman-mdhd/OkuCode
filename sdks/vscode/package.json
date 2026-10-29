@@ -2,7 +2,7 @@
   "name": "okucode",
   "displayName": "OkuCode",
   "description": "OkuCode, the Okutobus AI coding agent, inside VS Code: chat panel, approvals and diffs",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "publisher": "okutobus",
   "repository": {
     "type": "git",
