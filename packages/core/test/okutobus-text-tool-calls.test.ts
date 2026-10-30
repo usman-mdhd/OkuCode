@@ -179,4 +179,22 @@ describe("Okutobus TextToolCalls (FR-48)", () => {
     expect(TextToolCalls.describedRead("I will read a.py and b.py", tools)).toBeUndefined()
     expect(TextToolCalls.describedRead("calculator.py has three functions.", tools)).toBeUndefined()
   })
+  test("runs a document call with real line breaks in its content, and keeps the answer's own code blocks", async () => {
+    const answer =
+      "To add orders, use a sub-resource:\n\n```http\nGET /users/1/orders HTTP/1.1\n```\n\nResponse:\n\n```json\n[{\"orderId\": 101}]\n```\n\nDone.\n\n"
+    const call =
+      '```json\n{\n  "name": "document",\n  "arguments": {\n    "path": "REST_API_Orders.docx",\n    "content": "# Orders\n\n**Request:**\n```\nGET /users/1/orders\n```\n\t\\"id\\": 1"\n  }\n}\n```'
+    const out = await run([...textEvents("t1", [answer, call]), finish()], new Set(["document", "shell"]))
+    expect(calls(out)).toEqual([
+      {
+        name: "document",
+        input: { path: "REST_API_Orders.docx", content: '# Orders\n\n**Request:**\n```\nGET /users/1/orders\n```\n\t"id": 1' },
+      },
+    ])
+    const shown = text(out)
+    expect(shown).toContain("```http\nGET /users/1/orders HTTP/1.1\n```")
+    expect(shown).toContain('```json\n[{"orderId": 101}]\n```')
+    expect(shown).not.toContain('"name": "document"')
+    expect(shown.trim().endsWith("Done.")).toBe(true)
+  })
 })

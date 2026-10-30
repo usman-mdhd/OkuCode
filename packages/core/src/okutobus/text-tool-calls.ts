@@ -108,7 +108,7 @@ export function make(tools: ReadonlySet<string>) {
         }
       }
       const held = state.text.slice(state.sent)
-      const tail = calls.length > 0 && !native ? withoutCalls(held) : held
+      const tail = calls.length > 0 && !native ? withoutCalls(held, tools) : held
       const out: Event[] = tail.trim() || (tail && calls.length === 0) ? [LLMEvent.textDelta({ id, text: tail })] : []
       return [...out, ...(end ? [end] : []), ...calls]
     }
@@ -206,11 +206,26 @@ export function holdFrom(text: string, from: number): number {
   return text.length
 }
 
-/** Removes the JSON calls (and their fences/tags) from held text, keeping any other words. */
-function withoutCalls(text: string): string {
+/**
+ * Removes the JSON calls (with the fence or tags around each one) from held text. Everything else, including other
+ * code blocks such as JSON examples in an answer, stays as written.
+ */
+function withoutCalls(text: string, tools: ReadonlySet<string>): string {
   let out = text
-  for (const blob of jsonValues(text)) out = out.replace(blob, "")
-  return out.replace(/```json|```|<\/?tool_call>|<\/?function[^>]*>/g, "").replace(/\n{3,}/g, "\n\n")
+  for (const blob of jsonValues(text)) {
+    const value = parseJson(blob)
+    if (!(Array.isArray(value) ? value : [value]).some((item) => toCall(item, tools))) continue
+    const at = out.indexOf(blob)
+    if (at < 0) continue
+    const before = out.slice(0, at)
+    const after = out.slice(at + blob.length)
+    const open = before.match(/(?:```[a-zA-Z]*|<tool_call>|<function[^>]*>)\s*$/)
+    const close = after.match(/^\s*(?:```|<\/tool_call>|<\/function>)/)
+    out =
+      (open && close ? before.slice(0, before.length - open[0].length) : before) +
+      (open && close ? after.slice(close[0].length) : after)
+  }
+  return out.replace(/\n{3,}/g, "\n\n")
 }
 
 const SHELL_LANGUAGES = new Set(["", "sh", "bash", "shell", "zsh", "console", "terminal"])
@@ -355,7 +370,8 @@ function* jsonValues(text: string): Generator<string> {
 }
 
 function parseJson(text: string): unknown {
-  for (const candidate of [text, text.replace(/,\s*([}\]])/g, "$1")]) {
+  const escaped = escapeControls(text)
+  for (const candidate of [text, text.replace(/,\s*([}\]])/g, "$1"), escaped, escaped.replace(/,\s*([}\]])/g, "$1")]) {
     try {
       return JSON.parse(candidate)
     } catch {
@@ -363,6 +379,32 @@ function parseJson(text: string): unknown {
     }
   }
   return undefined
+}
+
+/** Models often put real line breaks and tabs inside JSON strings (long document content): escape them. */
+function escapeControls(text: string): string {
+  let out = ""
+  let inString = false
+  let escaped = false
+  for (const ch of text) {
+    if (inString) {
+      if (escaped) escaped = false
+      else if (ch === "\\") escaped = true
+      else if (ch === '"') inString = false
+      else if (ch === "\n") {
+        out += "\\n"
+        continue
+      } else if (ch === "\r") {
+        out += "\\r"
+        continue
+      } else if (ch === "\t") {
+        out += "\\t"
+        continue
+      }
+    } else if (ch === '"') inString = true
+    out += ch
+  }
+  return out
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
