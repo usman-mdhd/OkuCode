@@ -32,12 +32,15 @@ describe("Okutobus routing (FR-46)", () => {
       expect(OkuRouting.simple(text)).toBe(false)
   })
 
-  test("the small model answers until a tool runs", () => {
-    expect(OkuRouting.useSmall([user("What is a REST API?")], on)).toBe(true)
-    expect(OkuRouting.useSmall([assistant(), user("What is a REST API?")], on)).toBe(true)
-    expect(OkuRouting.useSmall([assistant(true), user("What is a REST API?")], on)).toBe(false)
+  test("only the opening question of a chat goes to the small model, and only when routing is on", () => {
+    const routed = { ...on, routing: true }
+    expect(OkuRouting.useSmall([user("What is a REST API?")], routed)).toBe(true)
+    // Follow-ups need the earlier conversation, so they stay on the main model.
+    expect(OkuRouting.useSmall([user("explain the second point?"), assistant(), user("What is a REST API?")], routed)).toBe(false)
+    expect(OkuRouting.useSmall([assistant(true), user("What is a REST API?")], routed)).toBe(false)
+    expect(OkuRouting.useSmall([user("What is a REST API?")], on)).toBe(false)
     expect(OkuRouting.useSmall([user("What is a REST API?")], { ...on, routing: false })).toBe(false)
-    expect(OkuRouting.useSmall([user("What is a REST API?")], {})).toBe(false)
-    expect(OkuRouting.useSmall([user("create hello.py")], on)).toBe(false)
+    expect(OkuRouting.useSmall([user("What is a REST API?")], { routing: true })).toBe(false)
+    expect(OkuRouting.useSmall([user("create hello.py")], routed)).toBe(false)
   })
 })

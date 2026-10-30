@@ -295,7 +295,7 @@ export function createAccounts(input: {
       return json(200, {
         approvalMode: value.approvalMode ?? null,
         autoTest: value.autoTest !== false,
-        routing: value.routing !== false,
+        routing: value.routing === true,
         smallModel: value.smallModel ?? null,
         teamRules: store.teamRules(),
       })

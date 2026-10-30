@@ -225,7 +225,7 @@ function policyView(p) {
   return '<form id="policy"><div class="card"><h2>Team policy</h2><p class="sub">These settings apply to every chat on this OkuCode server, for every user.</p>' +
     '<div class="field"><span>Approval mode</span><select id="approvalMode"><option value=""' + (p.approvalMode ? "" : " selected") + ' disabled>Choose…</option>' + modes.map((m) => '<option value="' + m[0] + '"' + (p.approvalMode === m[0] ? " selected" : "") + '>' + m[1] + ' — ' + m[2] + '</option>').join("") + '</select></div>' +
     '<label class="check" style="margin-bottom:10px"><input type="checkbox" id="autoTest"' + (p.autoTest ? " checked" : "") + '> Run the tests after OkuCode changes code, and fix failures</label>' +
-    '<label class="check"><input type="checkbox" id="routing"' + (p.routing ? " checked" : "") + '> Send short general questions to the small model' + (p.smallModel ? ' (<code>' + esc(p.smallModel) + '</code>)' : ' (no small model set up)') + '</label></div>' +
+    '<label class="check"><input type="checkbox" id="routing"' + (p.routing ? " checked" : "") + '> Send the first short general question of a new chat to the small model' + (p.smallModel ? ' (<code>' + esc(p.smallModel) + '</code>)' : ' (no small model set up)') + '</label></div>' +
     '<div class="card"><h2>Team rules</h2><p class="sub">OkuCode follows these rules in every chat, on top of each project\\'s own OKUCODE.md. Write one rule per line.</p>' +
     '<textarea id="teamRules" placeholder="- Use TypeScript strict mode.&#10;- Never commit directly to main.&#10;- Write unit tests for new functions.">' + esc(p.teamRules) + '</textarea></div>' +
     '<button class="primary">Save policy</button></form>'

@@ -1,10 +1,10 @@
 export * as OkuRouting from "./routing.js"
 
 // Okutobus (OkuCode) SRS FR-46: model routing. Set "smallModel" in <config>/okucode.json (for example
-// "ollama/qwen2.5-coder:3b") and OkuCode sends light work to it: chat titles, and short general questions
-// ("what is a REST API?") that need no files or tools. Coding work, anything about this project, and every step
-// after a tool call stay on the main model. "routing": false keeps questions on the main model (titles still use
-// the small model).
+// "ollama/qwen2.5-coder:3b") and OkuCode uses it for chat titles. With "routing": true it also answers the opening
+// short general question of a new chat ("what is a REST API?"). Follow-up messages, coding work, anything about this
+// project, and every step after a tool call stay on the main model: the small model gave short answers and, with
+// its small context window, lost the earlier conversation on follow-ups. Routing is off unless turned on.
 
 import { readFileSync } from "node:fs"
 import type { SessionMessage } from "../session/message.js"
@@ -49,14 +49,17 @@ export function simple(text: string) {
 }
 
 /**
- * True when this step should use the small model: routing is on, the latest user message is a simple question,
- * and no tool has run since it (once the small model calls a tool, the main model takes over). Newest first.
+ * True when this step should use the small model: routing is turned on, the latest user message is a simple question,
+ * it opens the chat (no earlier messages), and no tool has run since it. Newest first.
  */
 export function useSmall(messages: readonly SessionMessage.Info[], current = settings()) {
-  if (current.routing === false || !smallModel(current.smallModel)) return false
-  for (const message of messages) {
-    if (message.type === "assistant" && message.content.some((part) => part.type === "tool")) return false
-    if (message.type === "user") return simple(message.text)
-  }
-  return false
+  if (current.routing !== true || !smallModel(current.smallModel)) return false
+  const index = messages.findIndex((message) => message.type === "user")
+  if (index === -1) return false
+  // A follow-up needs the earlier conversation, so it stays on the main model.
+  if (messages.slice(index + 1).some((message) => message.type === "user" || message.type === "assistant")) return false
+  if (messages.slice(0, index).some((message) => message.type === "assistant" && message.content.some((part) => part.type === "tool")))
+    return false
+  const latest = messages[index]
+  return latest.type === "user" && simple(latest.text)
 }

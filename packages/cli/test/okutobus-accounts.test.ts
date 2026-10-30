@@ -200,7 +200,7 @@ describe("OkuCode accounts", () => {
 
     // The policy applies to every chat: approval mode, auto-test, routing and team rules.
     expect((await t.call("GET", "/okucode/api/policy")).data).toEqual({
-      approvalMode: null, autoTest: true, routing: true, smallModel: "ollama/qwen2.5-coder:3b", teamRules: "",
+      approvalMode: null, autoTest: true, routing: false, smallModel: "ollama/qwen2.5-coder:3b", teamRules: "",
     })
     expect((await t.call("PUT", "/okucode/api/policy", { body: { approvalMode: "yolo" } })).status).toBe(400)
     const saved = await t.call("PUT", "/okucode/api/policy", {

@@ -360,7 +360,7 @@ export const SettingsTeam: Component<{ me: Me }> = (props) => {
                     title="Small model for quick questions"
                     description={
                       current().smallModel
-                        ? `Short general questions go to ${current().smallModel}; coding stays on the main model.`
+                        ? `The first short general question of a new chat goes to ${current().smallModel}. Follow-ups and coding stay on the main model.`
                         : "No small model is set up yet (smallModel in okucode.json)."
                     }
                   >
