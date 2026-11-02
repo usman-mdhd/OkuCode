@@ -81,6 +81,8 @@ const CONTAINERS = new Set([
   "type_alias_declaration",
   "type_spec",
 ])
+// git pathspecs for the languages above, so content search skips docs, data and lock files.
+const SOURCE_SPECS = () => [...new Set(Object.keys(LANGUAGES))].map((extension) => `*${extension}`)
 const VALUE_FUNCTIONS = new Set(["arrow_function", "function_expression", "function"])
 
 const IGNORED_DIRS = new Set([
@@ -104,7 +106,7 @@ const IGNORED_DIRS = new Set([
   "obj",
 ])
 
-const MAX_FILES = 600
+const MAX_FILES = 1500
 const MAX_FILE_BYTES = 256 * 1024
 const MAX_ENTRIES_PER_FILE = 80
 
@@ -160,25 +162,38 @@ function init() {
 
 export const languageOf = (file: string) => LANGUAGES[path.extname(file).toLowerCase()]
 
-/** Source files of the project: git's list when it is a git repository, otherwise a folder walk. */
-export function listFiles(directory: string): string[] {
+// Folders whose code is rarely what a question is about: listed after the rest, and left out of large projects.
+const SECONDARY = /(^|\/)(tests?|__tests__|__mocks__|spec|e2e|fixtures?|stories|storybook|examples?|samples?|docs?|scripts|migrations|generated|test-browser|component-tests)\//i
+const SECONDARY_FILE = /([._-](test|spec|stories|story)\.[a-z]+$)|(\.d\.ts$)|(\.min\.js$)/i
+export const secondary = (file: string) => SECONDARY.test(file) || SECONDARY_FILE.test(file)
+
+/** Every source file of the project: git's list when it is a git repository, otherwise a folder walk. */
+export function allFiles(directory: string): string[] {
   const git = spawnSync("git", ["ls-files", "--cached", "--others", "--exclude-standard"], {
     cwd: directory,
     encoding: "utf8",
     timeout: 10_000,
-    maxBuffer: 32 * 1024 * 1024,
+    maxBuffer: 64 * 1024 * 1024,
   })
   const all =
     git.status === 0 && git.stdout.trim()
       ? git.stdout.split("\n").filter(Boolean)
       : walk(directory, "", [])
-  return all
-    .filter((file) => languageOf(file) && !file.split("/").some((part) => IGNORED_DIRS.has(part)))
-    .slice(0, MAX_FILES)
+  return all.filter((file) => languageOf(file) && !file.split("/").some((part) => IGNORED_DIRS.has(part)))
 }
 
+/** The files the map covers: main code first, tests and examples after, at most MAX_FILES. */
+export function listFiles(directory: string): string[] {
+  const all = allFiles(directory)
+  return [...all.filter((file) => !secondary(file)), ...all.filter(secondary)].slice(0, MAX_FILES)
+}
+
+const isGit = (directory: string) =>
+  spawnSync("git", ["rev-parse", "--is-inside-work-tree"], { cwd: directory, encoding: "utf8", timeout: 5_000 })
+    .stdout?.trim() === "true"
+
 function walk(root: string, relative: string, out: string[]): string[] {
-  if (out.length >= MAX_FILES * 4) return out
+  if (out.length >= 20_000) return out
   let names: string[]
   try {
     names = readdirSync(path.join(root, relative))
@@ -272,8 +287,7 @@ const WORD = /[A-Za-z_][A-Za-z0-9_]{2,}/g
 const cache = new Map<string, { size: number; mtime: number; outline: FileOutline }>()
 
 /** Outlines of the project's source files (cached by size and modification time). */
-export async function build(directory: string): Promise<FileOutline[]> {
-  const files = listFiles(directory)
+export async function build(directory: string, files = listFiles(directory)): Promise<FileOutline[]> {
   if (files.length === 0) return []
   const ts = await init()
   const out: FileOutline[] = []
@@ -321,16 +335,21 @@ const queryWords = (query: string) =>
     ),
   ]
 
-/** Files ordered by importance: symbols used in other files, and words of the query in the path or symbol names. */
-export function rank(files: ReadonlyArray<FileOutline>, query = ""): FileOutline[] {
+/**
+ * Files ordered by importance: symbols used in other files, words of the query in the path or symbol names, and an
+ * optional extra score per path (search matches).
+ */
+export function rank(files: ReadonlyArray<FileOutline>, query = "", boost?: ReadonlyMap<string, number>): FileOutline[] {
   const words = queryWords(query)
+  // In how many files each identifier appears.
+  const usedIn = new Map<string, number>()
+  for (const file of files) for (const word of file.words) usedIn.set(word, (usedIn.get(word) ?? 0) + 1)
   const score = (file: FileOutline) => {
-    let value = 0
+    let value = boost?.get(file.path) ?? 0
     for (const entry of file.entries) {
       if (entry.depth > 0 && entry.kind === "function") continue
-      let uses = 0
-      for (const other of files) if (other !== file && other.words.has(entry.name)) uses++
-      value += Math.log2(1 + uses)
+      const uses = (usedIn.get(entry.name) ?? 0) - (file.words.has(entry.name) ? 1 : 0)
+      value += Math.log2(1 + Math.max(0, uses))
     }
     value += Math.min(file.entries.length, 20) * 0.05
     const lowerPath = file.path.toLowerCase()
@@ -340,7 +359,7 @@ export function rank(files: ReadonlyArray<FileOutline>, query = ""): FileOutline
       else if ([...file.words].some((name) => name.toLowerCase() === word)) value += 3
     }
     // Tests and examples rank below the code they test unless asked for.
-    if (/(^|\/)(tests?|__tests__|spec|examples?)\//.test(lowerPath) || /[._-](test|spec)\./.test(lowerPath)) value *= 0.5
+    if (secondary(file.path)) value *= 0.5
     return value
   }
   return files
@@ -392,6 +411,100 @@ export function render(
   return out.join("\n")
 }
 
+// Words that say nothing about where the code is.
+const STOP = new Set(
+  "where what which when how does do is are the this that these those there here code file files logic function functions class method find show tell explain implemented implementation defined located handle handled handles work works project repo repository please can you could would should about with from into for and not use used using make get set new add fix change update write read".split(
+    " ",
+  ),
+)
+
+/** Search words from a request, most specific first. */
+export function terms(text: string) {
+  return queryWords(text).filter((word) => word.length >= 4 && !STOP.has(word)).slice(0, 6)
+}
+
+/**
+ * Source files that match the request: words in the path, and words (or the words written together, such as
+ * approvalMode / approval_mode) in the content, found with git grep or in the outlined files. Best first.
+ */
+export function search(directory: string, text: string, limit = 12, minimum = 0): string[] {
+  const words = terms(text)
+  if (words.length === 0) return []
+  const files = allFiles(directory)
+  const known = new Set(files)
+  const score = new Map<string, number>()
+  const add = (file: string, value: number) => {
+    if (known.has(file)) score.set(file, (score.get(file) ?? 0) + value)
+  }
+  for (const file of files) {
+    // Whole words of the path: packages/app/approval-setting.tsx → packages, app, approval, setting, tsx.
+    const parts = new Set(
+      file
+        .replace(/([a-z])([A-Z])/g, "$1 $2")
+        .toLowerCase()
+        .split(/[^a-z0-9]+/),
+    )
+    for (const word of words)
+      if (parts.has(word) || parts.has(`${word}s`) || (word.endsWith("s") && parts.has(word.slice(0, -1)))) add(file, 12)
+  }
+  const patterns = [
+    ...words.map((word) => ({ pattern: word, value: 4 })),
+    ...words.slice(1).map((word, i) => ({ pattern: `${words[i]}[_ -]?${word}`, value: 10 })),
+  ]
+  if (isGit(directory)) {
+    for (const { pattern, value } of patterns) {
+      const result = spawnSync("git", ["grep", "-l", "-i", "-w", "-E", "-e", pattern, "--", ...SOURCE_SPECS()], {
+        cwd: directory,
+        encoding: "utf8",
+        timeout: 10_000,
+        maxBuffer: 32 * 1024 * 1024,
+      })
+      if (result.status !== 0 || !result.stdout) continue
+      const hits = result.stdout.split("\n").filter(Boolean)
+      // A word found in hundreds of files says little.
+      const weight = hits.length > 200 ? value / 4 : value
+      for (const file of hits) add(file, weight)
+    }
+  } else {
+    for (const [absolute, item] of cache) {
+      if (!absolute.startsWith(directory)) continue
+      const names = [...item.outline.words].map((name) => name.toLowerCase())
+      for (const word of words) if (names.some((name) => name.includes(word))) add(item.outline.path, 4)
+    }
+  }
+  for (const [file, value] of score) if (secondary(file)) score.set(file, value / 3)
+  return [...score.entries()]
+    .filter(([, value]) => value > minimum)
+    .sort((a, b) => b[1] - a[1] || a[0].length - b[0].length)
+    .slice(0, limit)
+    .map(([file]) => file)
+}
+
+/** The files that match the request with their outlines, for the system prompt; undefined when none match. */
+const recent = new Map<string, { at: number; value: Promise<string | undefined> }>()
+
+export function relevant(directory: string, text: string, budget = 2000): Promise<string | undefined> {
+  if (!enabled()) return Promise.resolve(undefined)
+  // Every step of a turn asks again for the same message: answer from memory for a minute.
+  const key = `${directory}\n${budget}\n${text}`
+  const hit = recent.get(key)
+  if (hit && Date.now() - hit.at < 60_000) return hit.value
+  const value = findRelevant(directory, text, budget).catch(() => undefined)
+  recent.set(key, { at: Date.now(), value })
+  if (recent.size > 50) recent.delete(recent.keys().next().value!)
+  return value
+}
+
+async function findRelevant(directory: string, text: string, budget: number): Promise<string | undefined> {
+  // Only clear matches: a word in the path, words written together, or three words in the content.
+  const files = search(directory, text, 8, 11)
+  if (files.length === 0) return undefined
+  const outlines = await build(directory, files)
+  const order = new Map(files.map((file, i) => [file, i]))
+  outlines.sort((a, b) => order.get(a.path)! - order.get(b.path)!)
+  return render(outlines, budget, { methods: true, lines: true, perFile: 12 })
+}
+
 export const enabled = () => {
   try {
     return (JSON.parse(readFileSync(OkuApproval.settingsFile(), "utf8")) as { repoMap?: unknown }).repoMap !== false
@@ -413,8 +526,11 @@ export async function short(directory: string): Promise<string | undefined> {
 
 /** The longer map for the repo_map tool, ranked for `query`. */
 export async function long(directory: string, query = "", focus?: string) {
-  const files = await build(directory)
+  // Files that match the query come first, even in projects too large for the whole map.
+  const matched = query ? search(directory, query, 30) : []
+  const files = await build(directory, [...new Set([...matched, ...listFiles(directory)])])
   const chosen = focus ? files.filter((file) => file.path.startsWith(focus.replace(/^\.\//, ""))) : files
   if (chosen.length === 0) return "No source files found."
-  return render(rank(chosen, query), LONG_BUDGET, { methods: true, lines: true, types: true, perFile: 40 })
+  const boost = new Map(matched.map((file, i) => [file, 60 - i * 2]))
+  return render(rank(chosen, query, boost), LONG_BUDGET, { methods: true, lines: true, types: true, perFile: 40 })
 }

@@ -206,17 +206,28 @@ const layer = Layer.effect(
         selection.instructions,
         model.ref,
       )
+      const messages = history.entries.map((entry) => entry.message)
+      // Okutobus FR-18: the files that match the latest message, from the repository map, so the model reads the right
+      // files instead of guessing.
+      const latest = messages.findLast((message) => message.type === "user")
+      const matched =
+        small || !latest || latest.type !== "user"
+          ? undefined
+          : yield* Effect.promise(() => OkuRepoMap.relevant(selection.session.location.directory, latest.text))
+      const initial = matched
+        ? `${history.initial}\n\nFiles in this project that match the latest request (from the repository map, best first). Read the ones you need before you answer; do not guess file names:\n<matching_files>\n${matched}\n</matching_files>`
+        : history.initial
       return {
         session: selection.session,
         agent: selection.agent,
         model,
         // Okutobus FR-46: the small model only answers in text. Without tools it cannot invent tool calls.
-        initial: small ? `${history.initial}\n\n${OkuRouting.SMALL_NOTE}` : history.initial,
+        initial: small ? `${initial}\n\n${OkuRouting.SMALL_NOTE}` : initial,
         messages: history.entries.map((entry) => entry.message),
         tools: small
           ? { ...selection.tools, definitions: [] }
           : // Okutobus: Word/PDF files only when the user asks for one.
-            OkuDocs.fileRequested(history.entries.map((entry) => entry.message))
+            OkuDocs.fileRequested(messages)
             ? selection.tools
             : { ...selection.tools, definitions: selection.tools.definitions.filter((tool) => tool.name !== "document") },
       }
@@ -239,7 +250,7 @@ const repoMapInstructions = (directory: string) =>
       initial: (map) =>
         [
           "Repository map: the main source files of this project with their classes and functions, most used first.",
-          "Use it to decide which files to read. Call the repo_map tool with a query for methods, line numbers and more files.",
+          "It shows only part of a large project. Use it to decide which files to read; call the repo_map tool with a query for methods, line numbers and more files.",
           "<repo_map>",
           map,
           "</repo_map>",

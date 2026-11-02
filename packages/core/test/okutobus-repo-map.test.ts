@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test"
+import { spawnSync } from "node:child_process"
 import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import path from "node:path"
@@ -51,5 +52,22 @@ describe("Okutobus repository map (FR-18)", () => {
     expect(OkuRepoMap.render(OkuRepoMap.rank(files), 60).length).toBeLessThanOrEqual(60 + 40)
     expect(await OkuRepoMap.short(project({ "notes.md": "hi", "a.py": "def f():\n  pass\n" }))).toBeUndefined()
     expect(await OkuRepoMap.short(project(sample))).toContain("class AuthService")
+  })
+  test("finds the files that match a request, by path words and content", async () => {
+    const dir = project({
+      ...sample,
+      "app/settings/approval_mode.py": "def current_mode():\n    return 'ask'\n",
+      "app/restart.py": "def restart():\n    pass\n",
+    })
+    spawnSync("git", ["init", "-q"], { cwd: dir })
+    spawnSync("git", ["add", "."], { cwd: dir })
+    expect(OkuRepoMap.search(dir, "where is the approval mode logic?")[0]).toBe("app/settings/approval_mode.py")
+    expect(OkuRepoMap.search(dir, "where is the password reset code?")).toContain("app/auth.py")
+    // Clear matches only: "rest" is not "restart", and general questions add nothing.
+    expect(await OkuRepoMap.relevant(dir, "what is a REST API?")).toBeUndefined()
+    expect(await OkuRepoMap.relevant(dir, "hi")).toBeUndefined()
+    const found = await OkuRepoMap.relevant(dir, "where is the approval mode logic?")
+    expect(found?.split("\n")[0]).toBe("app/settings/approval_mode.py")
+    expect(found).toContain("def current_mode()  (line 1)")
   })
 })
