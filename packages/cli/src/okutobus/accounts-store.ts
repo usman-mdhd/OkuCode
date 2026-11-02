@@ -38,6 +38,8 @@ export type Settings = {
   /** FR-46: the small model ("provider/model") and whether short questions go to it (read by core's OkuRouting). */
   smallModel?: string
   routing?: boolean
+  /** Skills switched off in Settings → Extensions → Skills (read by core's OkuSkills). */
+  disabledSkills?: string[]
 }
 
 type File = { secret: string; users: User[] }

@@ -8,6 +8,7 @@ import { Skill } from "@opencode/schema/skill"
 import { Bus } from "./bus.js"
 import { Permission } from "./permission.js"
 import { State } from "./state.js"
+import { OkuSkills } from "./okutobus/skills.js"
 
 export const DirectorySource = Skill.DirectorySource
 export type DirectorySource = Skill.DirectorySource
@@ -30,8 +31,13 @@ export type Name = Skill.Name
 
 export { Event } from "@opencode/schema/skill"
 
-export const available = (skills: ReadonlyArray<Info>, permissions: Permission.Ruleset) =>
-  skills.filter((skill) => Permission.evaluate("skill", skill.id, permissions).effect !== "deny")
+export const available = (skills: ReadonlyArray<Info>, permissions: Permission.Ruleset) => {
+  // Okutobus (OkuCode): skills switched off in Settings → Extensions → Skills are left out.
+  const off = OkuSkills.disabled()
+  return skills.filter(
+    (skill) => OkuSkills.enabled(skill, off) && Permission.evaluate("skill", skill.id, permissions).effect !== "deny",
+  )
+}
 
 export const toModelOutput = (skill: Info, files: ReadonlyArray<string>) => {
   const directory = path.dirname(skill.path)

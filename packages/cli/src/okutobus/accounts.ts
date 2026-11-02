@@ -301,6 +301,10 @@ export function createAccounts(input: {
       })
     }
 
+    // Skills switched off in Settings → Extensions → Skills.
+    if (path === "/okucode/api/skills" && request.method === "GET")
+      return json(200, { disabled: settings().disabledSkills ?? [] })
+
     if (path === "/okucode/api/settings" && request.method === "GET") {
       if (!isAdmin) return adminOnly()
       const value = settings()
@@ -326,6 +330,20 @@ export function createAccounts(input: {
         return json(400, { error: "Mode must be ask, auto-edit or full-auto." })
       store.saveSettings({ ...settings(), approvalMode: next.mode })
       return json(200, { mode: next.mode })
+    }
+
+    if (path === "/okucode/api/skills" && request.method === "PUT") {
+      const next = await body<{ name?: unknown; enabled?: unknown }>(request)
+      if (typeof next.name !== "string" || !next.name.trim() || next.name.length > 200 || typeof next.enabled !== "boolean")
+        return json(400, { error: "Send a skill name and enabled: true or false." })
+      const value = settings()
+      const name = next.name.trim()
+      const off = new Set(value.disabledSkills ?? [])
+      if (next.enabled) off.delete(name)
+      else off.add(name)
+      value.disabledSkills = [...off].sort()
+      store.saveSettings(value)
+      return json(200, { disabled: value.disabledSkills })
     }
 
     if (path === "/okucode/api/policy" && request.method === "PUT") {

@@ -6,6 +6,7 @@ import { Effect, Schema } from "effect"
 import { FSUtil } from "@opencode/util/fs-util"
 import { Skill } from "../../skill.js"
 import { Permission } from "../../permission.js"
+import { OkuSkills } from "../../okutobus/skills.js"
 
 export const name = "skill"
 
@@ -47,6 +48,9 @@ export const Plugin = {
             Effect.gen(function* () {
               const skill = yield* skills.get(input.id)
               if (!skill) return yield* unableToLoad(input.id)
+              // Okutobus (OkuCode): a skill switched off in Settings cannot be loaded.
+              if (!OkuSkills.enabled(skill))
+                return yield* new ToolFailure({ message: `The skill ${skill.name} is switched off in Settings.` })
               return yield* Effect.gen(function* () {
                 yield* permission.assert({
                   action: name,

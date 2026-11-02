@@ -218,6 +218,22 @@ describe("OkuCode accounts", () => {
     expect((await t.call("PUT", "/okucode/api/policy", { body: { autoTest: true } })).status).toBe(403)
   })
 
+  test("admins switch skills on and off; members cannot", async () => {
+    const t = setup()
+    await t.call("POST", "/okucode/auth/password", { body: { password: PASSWORD } })
+    expect((await t.call("GET", "/okucode/api/skills")).data).toEqual({ disabled: [] })
+    expect((await t.call("PUT", "/okucode/api/skills", { body: { name: "pdf", enabled: false } })).data).toEqual({ disabled: ["pdf"] })
+    await t.call("PUT", "/okucode/api/skills", { body: { name: "docx", enabled: false } })
+    expect((await t.call("PUT", "/okucode/api/skills", { body: { name: "pdf", enabled: true } })).data).toEqual({ disabled: ["docx"] })
+    expect(t.store.settings().disabledSkills).toEqual(["docx"])
+    expect((await t.call("PUT", "/okucode/api/skills", { body: { name: "", enabled: false } })).status).toBe(400)
+
+    await t.call("POST", "/okucode/api/users", { body: { email: "new@okutobus.com" } })
+    t.store.saveSettings({ ...t.store.settings(), google: { clientId: "id", clientSecret: "secret" } })
+    await googleSignIn(t)
+    expect((await t.call("PUT", "/okucode/api/skills", { body: { name: "docx", enabled: true } })).status).toBe(403)
+  })
+
   test("email message is valid MIME", () => {
     const body = message({
       host: "", port: 0, user: "", pass: "", from: "a@b.com", fromName: "OkuCode", to: "c@d.com",

@@ -1,4 +1,4 @@
-import { Component, For, createEffect, createMemo, createResource } from "solid-js"
+import { Component, For, Show, createEffect, createMemo, createResource } from "solid-js"
 import { Icon } from "@opencode/ui/icon"
 import { Switch } from "@opencode/ui/switch"
 import { Tabs } from "@opencode/ui/tabs"
@@ -10,6 +10,7 @@ import { pluginLabels } from "@/providers/catalog/plugin"
 import { ExternalLink } from "@/runtime/platform/external-link"
 import { SettingsList } from "@/settings/list"
 import type { SettingsView } from "@/settings/surface"
+import { useSkillSwitches } from "@/okutobus/skill-switches"
 import "@/settings/settings.css"
 
 interface McpRowItem {
@@ -71,6 +72,9 @@ export const SettingsExtensions: Component<{
     void data.location.skill.sync().catch(() => undefined)
   })
   const skills = () => data.location.skill.list() ?? []
+  // Okutobus (OkuCode): every skill has an on/off switch, plus one for all skills at once.
+  const switches = useSkillSwitches()
+  const allOn = () => skills().length > 0 && skills().every((skill) => switches.isOn(skill.name))
 
   return (
     <>
@@ -161,14 +165,45 @@ export const SettingsExtensions: Component<{
                   {language.t("settings.extensions.addSkills")}
                 </ExternalLink>
               </div>
+              <Show when={switches.error()}>
+                <span class="text-12-regular text-v2-text-text-danger">{switches.error()}</span>
+              </Show>
+              <Show when={!switches.disabled.loading && !switches.ready()}>
+                <span class="text-12-regular text-v2-text-text-muted">
+                  Only admins and team leads can switch skills on or off.
+                </span>
+              </Show>
               <SettingsList variant="catalog">
+                <Show when={skills().length > 1}>
+                  <div class="settings-extension-row" data-action="okucode-skills-all">
+                    <div class="settings-extension-lead">
+                      <span class="settings-extension-name truncate text-13-medium">All skills</span>
+                    </div>
+                    <Switch
+                      checked={allOn()}
+                      disabled={!switches.ready()}
+                      onChange={(checked) => void switches.set(skills().map((skill) => skill.name), checked)}
+                      hideLabel
+                    >
+                      All skills
+                    </Switch>
+                  </div>
+                </Show>
                 <For each={skills()}>
                   {(skill) => (
-                    <div class="settings-extension-row">
+                    <div class="settings-extension-row" data-skill={skill.name}>
                       <div class="settings-extension-lead">
                         <Icon name="post-skill" class="text-v2-icon-icon-muted shrink-0" />
                         <span class="settings-extension-name truncate">{skill.name}</span>
                       </div>
+                      <Switch
+                        checked={switches.isOn(skill.name)}
+                        disabled={!switches.ready()}
+                        onChange={(checked) => void switches.set([skill.name], checked)}
+                        hideLabel
+                      >
+                        {skill.name}
+                      </Switch>
                     </div>
                   )}
                 </For>
