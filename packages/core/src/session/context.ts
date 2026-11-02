@@ -25,6 +25,7 @@ import { SessionRunnerModel } from "./runner/model.js"
 import { SessionSchema } from "./schema.js"
 import { SessionStore } from "./store.js"
 import { SessionMessageTable } from "./sql.js"
+import { OkuDocs } from "../okutobus/docs.js"
 import { OkuRouting } from "../okutobus/routing.js"
 import { and, desc, eq, inArray } from "drizzle-orm"
 
@@ -209,7 +210,12 @@ const layer = Layer.effect(
         // Okutobus FR-46: the small model only answers in text. Without tools it cannot invent tool calls.
         initial: small ? `${history.initial}\n\n${OkuRouting.SMALL_NOTE}` : history.initial,
         messages: history.entries.map((entry) => entry.message),
-        tools: small ? { ...selection.tools, definitions: [] } : selection.tools,
+        tools: small
+          ? { ...selection.tools, definitions: [] }
+          : // Okutobus: Word/PDF files only when the user asks for one.
+            OkuDocs.fileRequested(history.entries.map((entry) => entry.message))
+            ? selection.tools
+            : { ...selection.tools, definitions: selection.tools.definitions.filter((tool) => tool.name !== "document") },
       }
     })
 

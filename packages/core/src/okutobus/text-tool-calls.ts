@@ -23,6 +23,7 @@ export * as TextToolCalls from "./text-tool-calls.js"
 
 import { LLMEvent } from "@opencode/ai"
 import { Stream } from "effect"
+import { OkuDocs } from "./docs.js"
 
 type Event = LLMEvent
 type TextState = { start?: Event; text: string; sent: number; mode: "undecided" | "buffer" | "pass" }
@@ -43,8 +44,7 @@ export function offeredTools(tools: ReadonlyArray<{ readonly type: string; reado
 // The user asked for a file. Otherwise a document call written as text is not run: its content is shown as the answer
 // (when it is the whole reply) or left out (when it follows an answer). Small models write such calls on their own
 // after "give me an example".
-const FILE_REQUEST =
-  /\b(?:word|docx|pdf|document|documents|doc|file|files|report|save|download|export|pptx|powerpoint|excel|xlsx|csv|sheet)\b/i
+const FILE_REQUEST = OkuDocs.FILE_REQUEST
 
 /** True when the latest user message asks for a file (system reminders inside it do not count). */
 export function fileRequested(messages: ReadonlyArray<{ readonly role: string; readonly content: ReadonlyArray<unknown> }>) {
