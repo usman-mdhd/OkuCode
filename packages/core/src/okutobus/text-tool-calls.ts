@@ -40,10 +40,39 @@ export function offeredTools(tools: ReadonlyArray<{ readonly type: string; reado
   return names
 }
 
-/** Applies the transform to a model event stream. */
-export function apply<E, R>(stream: Stream.Stream<Event, E, R>, tools: ReadonlySet<string>): Stream.Stream<Event, E, R> {
+// The user asked for a file. Otherwise a document call written as text is not run: its content is shown as the answer
+// (when it is the whole reply) or left out (when it follows an answer). Small models write such calls on their own
+// after "give me an example".
+const FILE_REQUEST =
+  /\b(?:word|docx|pdf|document|documents|doc|file|files|report|save|download|export|pptx|powerpoint|excel|xlsx|csv|sheet)\b/i
+
+/** True when the latest user message asks for a file (system reminders inside it do not count). */
+export function fileRequested(messages: ReadonlyArray<{ readonly role: string; readonly content: ReadonlyArray<unknown> }>) {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const message = messages[i]!
+    if (message.role !== "user") continue
+    const text = message.content
+      .flatMap((part) =>
+        typeof part === "object" && part !== null && (part as { type?: unknown }).type === "text"
+          ? [String((part as { text?: unknown }).text ?? "")]
+          : [],
+      )
+      .join("\n")
+      .replace(/<system-reminder>[\s\S]*?<\/system-reminder>/g, "")
+    if (!text.trim()) continue
+    return FILE_REQUEST.test(text)
+  }
+  return false
+}
+
+/** Applies the transform to a model event stream. Calls to `hidden` tools written as text are never run. */
+export function apply<E, R>(
+  stream: Stream.Stream<Event, E, R>,
+  tools: ReadonlySet<string>,
+  hidden: ReadonlySet<string> = new Set(),
+): Stream.Stream<Event, E, R> {
   // Runs even when no tools are offered (e.g. the chat agent), so made-up calls still get unwrapped.
-  const state = make(tools)
+  const state = make(tools, hidden)
   return Stream.concat(
     stream.pipe(Stream.flatMap((event) => Stream.fromIterable(state.handle(event)))),
     Stream.suspend(() => Stream.fromIterable(state.flush())),
@@ -51,7 +80,7 @@ export function apply<E, R>(stream: Stream.Stream<Event, E, R>, tools: ReadonlyS
 }
 
 /** Stateful event rewriter: feed events to `handle`, then call `flush` once at the end. */
-export function make(tools: ReadonlySet<string>) {
+export function make(tools: ReadonlySet<string>, hidden: ReadonlySet<string> = new Set()) {
   const texts = new Map<string, TextState>()
   let native = false
   let converted = 0
@@ -108,7 +137,9 @@ export function make(tools: ReadonlySet<string>) {
         }
       }
       const held = state.text.slice(state.sent)
-      const tail = calls.length > 0 && !native ? withoutCalls(held, tools) : held
+      let tail = calls.length > 0 && !native ? withoutCalls(held, tools) : held
+      // A document call nobody asked for, after the answer: leave it out.
+      if (!native && hidden.size > 0) tail = withoutCalls(tail, hidden)
       const out: Event[] = tail.trim() || (tail && calls.length === 0) ? [LLMEvent.textDelta({ id, text: tail })] : []
       return [...out, ...(end ? [end] : []), ...calls]
     }
@@ -219,8 +250,8 @@ function withoutCalls(text: string, tools: ReadonlySet<string>): string {
     if (at < 0) continue
     const before = out.slice(0, at)
     const after = out.slice(at + blob.length)
-    const open = before.match(/(?:```[a-zA-Z]*|<tool_call>|<function[^>]*>)\s*$/)
-    const close = after.match(/^\s*(?:```|<\/tool_call>|<\/function>)/)
+    const open = before.match(/(?:`{3,}[a-zA-Z]*|<tool_call>|<function[^>]*>)\s*$/)
+    const close = after.match(/^\s*(?:`{3,}|<\/tool_call>|<\/function>)/)
     out =
       (open && close ? before.slice(0, before.length - open[0].length) : before) +
       (open && close ? after.slice(close[0].length) : after)
@@ -298,7 +329,7 @@ export function unwrap(text: string, tools: ReadonlySet<string>): string | undef
   if (blobs.length !== 1) return undefined
   const rest = text
     .replace(blobs[0], "")
-    .replace(/```[a-zA-Z]*|<\/?tool_call>|<\/?function[^>]*>/g, "")
+    .replace(/`{3,}[a-zA-Z]*|<\/?tool_call>|<\/?function[^>]*>/g, "")
     .trim()
   if (rest) return undefined
   const value = parseJson(blobs[0])
@@ -341,8 +372,18 @@ function toCall(item: unknown, tools: ReadonlySet<string>): ParsedCall | undefin
   return { name, input }
 }
 
-/** Top-level `{...}` and `[...]` substrings, aware of JSON strings and escapes. */
+/**
+ * Top-level `{...}` and `[...]` substrings, aware of JSON strings and escapes. When a string was closed with a
+ * typographic quote (”) the strict scan never finds the end; those values are found in a second, lenient pass.
+ */
 function* jsonValues(text: string): Generator<string> {
+  const strict = [...scanJson(text, false)]
+  yield* strict
+  if (!text.includes("\u201d")) return
+  for (const blob of scanJson(text, true)) if (!strict.some((found) => found.includes(blob) || blob.includes(found))) yield blob
+}
+
+function* scanJson(text: string, lenient: boolean): Generator<string> {
   let depth = 0
   let start = -1
   let open = ""
@@ -354,6 +395,7 @@ function* jsonValues(text: string): Generator<string> {
       if (escaped) escaped = false
       else if (ch === "\\") escaped = true
       else if (ch === '"') inString = false
+      else if (lenient && ch === "\u201d" && /^\s*[}\],:]/.test(text.slice(i + 1, i + 40))) inString = false
       continue
     }
     if (depth > 0 && ch === '"') inString = true
@@ -371,7 +413,15 @@ function* jsonValues(text: string): Generator<string> {
 
 function parseJson(text: string): unknown {
   const escaped = escapeControls(text)
-  for (const candidate of [text, text.replace(/,\s*([}\]])/g, "$1"), escaped, escaped.replace(/,\s*([}\]])/g, "$1")]) {
+  // A string closed with a typographic quote (”) instead of ".
+  const quoted = escapeControls(text.replace(/[\u201c\u201d](\s*[}\],:])/g, '"$1'))
+  for (const candidate of [
+    text,
+    text.replace(/,\s*([}\]])/g, "$1"),
+    escaped,
+    escaped.replace(/,\s*([}\]])/g, "$1"),
+    quoted,
+  ]) {
     try {
       return JSON.parse(candidate)
     } catch {

@@ -106,9 +106,17 @@ export const make = Effect.gen(function* () {
     let overflowFailure: ProviderErrorEvent | undefined
     // Read to the end, not just the finish event, so the next request can reuse this response.
     // Okutobus FR-48: turn text-only tool calls from small open models into real tool calls.
+    // A document call written as text only runs when the user asked for a file.
+    const offered = TextToolCalls.offeredTools(input.prepared.request.tools)
+    const hidden = new Set<string>()
+    if (offered.has("document") && !TextToolCalls.fileRequested(input.prepared.request.messages)) {
+      offered.delete("document")
+      hidden.add("document")
+    }
     const providerStream = TextToolCalls.apply(
       llm.stream(input.prepared.request, input.prepared.options),
-      TextToolCalls.offeredTools(input.prepared.request.tools),
+      offered,
+      hidden,
     ).pipe(
       Stream.runForEach((event) =>
         Effect.gen(function* () {

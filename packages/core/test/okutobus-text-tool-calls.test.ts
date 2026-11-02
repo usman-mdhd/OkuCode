@@ -14,8 +14,8 @@ function textEvents(id: string, chunks: string[]): LLMEvent[] {
   ]
 }
 
-const run = (events: LLMEvent[], offered: ReadonlySet<string> = tools) =>
-  Effect.runPromise(Stream.runCollect(TextToolCalls.apply(Stream.fromIterable(events), offered))).then((chunk) =>
+const run = (events: LLMEvent[], offered: ReadonlySet<string> = tools, hidden?: ReadonlySet<string>) =>
+  Effect.runPromise(Stream.runCollect(TextToolCalls.apply(Stream.fromIterable(events), offered, hidden))).then((chunk) =>
     Array.from(chunk),
   )
 
@@ -196,5 +196,44 @@ describe("Okutobus TextToolCalls (FR-48)", () => {
     expect(shown).toContain('```json\n[{"orderId": 101}]\n```')
     expect(shown).not.toContain('"name": "document"')
     expect(shown.trim().endsWith("Done.")).toBe(true)
+  })
+  test("a document call nobody asked for is shown as the answer, not run", async () => {
+    const reply =
+      '```json\n{\n  "name": "document",\n  "arguments": {\n    "path": "rest_api_example.docx",\n    "content": "# REST API Example\n\nUse `GET /users` to list users.\n\nI hope this helps!”\n  }\n}\n```'
+    const asked = await run([...textEvents("t1", [reply]), finish()], new Set(["shell"]), new Set(["document"]))
+    expect(calls(asked)).toEqual([])
+    expect(text(asked)).toBe("# REST API Example\n\nUse `GET /users` to list users.\n\nI hope this helps!")
+
+    // After an answer: the call is left out and the answer stays.
+    const after = await run(
+      [...textEvents("t2", ["Here is an example.\n\n", reply]), finish()],
+      new Set(["shell"]),
+      new Set(["document"]),
+    )
+    expect(calls(after)).toEqual([])
+    expect(text(after).trim()).toBe("Here is an example.")
+
+    // When the user asked for a file, the same call runs (the closing ” is repaired).
+    const made = await run([...textEvents("t3", [reply]), finish()], new Set(["document"]))
+    expect(calls(made)).toEqual([
+      {
+        name: "document",
+        input: { path: "rest_api_example.docx", content: "# REST API Example\n\nUse `GET /users` to list users.\n\nI hope this helps!" },
+      },
+    ])
+  })
+
+  test("knows when the user asked for a file", () => {
+    const msg = (role: string, text: string) => ({ role, content: [{ type: "text", text }] })
+    expect(TextToolCalls.fileRequested([msg("user", "make a word file of the last example")])).toBe(true)
+    expect(TextToolCalls.fileRequested([msg("user", "save it as a PDF")])).toBe(true)
+    expect(TextToolCalls.fileRequested([msg("user", "can you give an example of that?")])).toBe(false)
+    expect(
+      TextToolCalls.fileRequested([
+        msg("user", "make a pdf"),
+        msg("assistant", "done"),
+        msg("user", "give me another example<system-reminder>Files: report.docx</system-reminder>"),
+      ]),
+    ).toBe(false)
   })
 })
