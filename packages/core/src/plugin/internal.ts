@@ -88,6 +88,7 @@ import { WebSearchTool } from "../tool/plugin/websearch.js"
 import { WellKnown } from "../wellknown.js"
 import { WriteTool } from "../tool/plugin/write.js"
 import { DocumentTool } from "../tool/plugin/document.js"
+import { RepoMapTool } from "../tool/plugin/repo-map.js"
 import { AgentPlugin } from "./agent.js"
 import BrowserPlugin from "@opencode/plugin-browser"
 import { CommandPlugin } from "./command.js"
@@ -250,6 +251,7 @@ const pre = [
   WebSearchTool.Plugin,
   WriteTool.Plugin,
   DocumentTool.Plugin,
+  RepoMapTool.Plugin,
   WarmingPlugin.Plugin,
 ] as const satisfies readonly InternalPlugin[]
 

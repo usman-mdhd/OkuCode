@@ -2,7 +2,7 @@ export * as SessionContext from "./context.js"
 
 import { Model } from "../model.js"
 import { Permission } from "../permission.js"
-import { Context, Effect, Layer } from "effect"
+import { Context, Effect, Layer, Schema } from "effect"
 import { Agent } from "../agent.js"
 import { CodeModeInstructions } from "../codemode/instructions.js"
 import { Database } from "../database/database.js"
@@ -26,6 +26,7 @@ import { SessionSchema } from "./schema.js"
 import { SessionStore } from "./store.js"
 import { SessionMessageTable } from "./sql.js"
 import { OkuDocs } from "../okutobus/docs.js"
+import { OkuRepoMap } from "../okutobus/repo-map.js"
 import { OkuRouting } from "../okutobus/routing.js"
 import { and, desc, eq, inArray } from "drizzle-orm"
 
@@ -156,6 +157,7 @@ const layer = Layer.effect(
           references: referenceInstructions.load(),
           mcp: mcpInstructions.load(permissions),
           entries: entries.load(sessionID),
+          repoMap: Effect.succeed(repoMapInstructions(location.directory)),
         },
         { concurrency: "unbounded" },
       )
@@ -173,6 +175,7 @@ const layer = Layer.effect(
           loaded.discovery,
           loaded.builtins,
           loaded.entries,
+          loaded.repoMap,
         ]),
         tools: loaded.tools,
       }
@@ -222,6 +225,29 @@ const layer = Layer.effect(
     return Service.of({ select, load, resolveModel, selectTitle, request })
   }),
 )
+
+// Okutobus SRS FR-18: a short repository map (main source files with their classes and functions) in code projects.
+const repoMapInstructions = (directory: string) =>
+  Instructions.make<string>({
+    key: Instructions.Key.make("okucode/repo-map"),
+    codec: Schema.toCodecJson(Schema.String),
+    read: Effect.tryPromise(() => OkuRepoMap.short(directory)).pipe(
+      Effect.map((map) => map ?? Instructions.removed),
+      Effect.orElseSucceed(() => Instructions.removed),
+    ),
+    render: {
+      initial: (map) =>
+        [
+          "Repository map: the main source files of this project with their classes and functions, most used first.",
+          "Use it to decide which files to read. Call the repo_map tool with a query for methods, line numbers and more files.",
+          "<repo_map>",
+          map,
+          "</repo_map>",
+        ].join("\n"),
+      changed: (_, map) => ["The repository map has changed. This map replaces the previous one.", "<repo_map>", map, "</repo_map>"].join("\n"),
+      removed: () => "The repository map is no longer available.",
+    },
+  })
 
 /** Variant IDs that minimize reasoning output, in preference order. */
 const MINIMAL_REASONING_VARIANTS = ["none", "minimal", "low"].map((id) => Model.VariantID.make(id))

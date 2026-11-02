@@ -40,6 +40,8 @@ export type Settings = {
   routing?: boolean
   /** Skills switched off in Settings → Extensions → Skills (read by core's OkuSkills). */
   disabledSkills?: string[]
+  /** FR-18: false turns off the repository map in the system prompt (read by core's OkuRepoMap). */
+  repoMap?: boolean
 }
 
 type File = { secret: string; users: User[] }
