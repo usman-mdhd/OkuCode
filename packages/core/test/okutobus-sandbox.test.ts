@@ -61,4 +61,10 @@ describe("Okutobus sandbox (FR-24)", () => {
     expect(run(`cat ${home}/.ssh/id_rsa`).stdout).not.toContain("SECRET")
     expect(run("echo tmp > /tmp/oku-sandbox-test.txt").status).toBe(0)
   })
+  test("tells the model when the sandbox blocked a command", () => {
+    const blocked = "zsh: operation not permitted: /Users/me/Desktop/oku-test.txt"
+    expect(OkuSandbox.explain(blocked, true)).toContain("[OkuCode sandbox]")
+    expect(OkuSandbox.explain(blocked, false)).toBe(blocked)
+    expect(OkuSandbox.explain("hello", true)).toBe("hello")
+  })
 })

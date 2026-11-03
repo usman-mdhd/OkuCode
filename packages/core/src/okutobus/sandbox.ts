@@ -165,3 +165,17 @@ export function wrap(program: string, args: readonly string[], roots: readonly s
   }
   return { program: "bwrap", args: [...bubblewrap(folders, { network }), "--", program, ...args], sandboxed: true }
 }
+
+const BLOCKED = /operation not permitted|read-only file system|permission denied|sandbox/i
+
+export const NOTE =
+  "[OkuCode sandbox] This command ran in OkuCode's sandbox (Full-auto mode): it may change files only inside the " +
+  "project folder, temp folders and package caches, and cannot read keys like ~/.ssh. The error above is the " +
+  "sandbox, not macOS or file permissions. Do not use sudo or chmod. Work inside the project folder, or tell the " +
+  "user that changing files outside the project needs Ask every time or Auto-edit mode."
+
+/** Adds NOTE to the output of a sandboxed command that was blocked. */
+export function explain(output: string, sandboxed: boolean) {
+  if (!sandboxed || !BLOCKED.test(output)) return output
+  return `${output}\n\n${NOTE}`
+}

@@ -15,6 +15,7 @@ import { NonNegativeInt } from "../../schema.js"
 import { Session } from "../../session.js"
 import { SessionSchema } from "../../session/schema.js"
 import { Shell } from "../../shell.js"
+import { OkuSandbox } from "../../okutobus/sandbox.js"
 import { shellParserWasm } from "#shell-parser-wasm"
 import { ShellParse } from "../../shell/parse.js"
 import { ShellSelect } from "../../shell/select.js"
@@ -224,11 +225,12 @@ export const Plugin = {
                 const result = yield* shell.result(info)
                 if (!result.capture) return yield* new Shell.NotFoundError({ id: info.id })
                 const output = ShellResult.output(result)
+                const text = output.timeout
+                  ? `${output.output}\n\nCommand exceeded timeout of ${finalTimeout} ms. Retry with a larger timeout if the command is expected to take longer.`
+                  : output.output
                 return {
                   ...output,
-                  output: output.timeout
-                    ? `${output.output}\n\nCommand exceeded timeout of ${finalTimeout} ms. Retry with a larger timeout if the command is expected to take longer.`
-                    : output.output,
+                  output: OkuSandbox.explain(text, OkuSandbox.active()),
                   status: "completed" as const,
                 }
               }).pipe(
