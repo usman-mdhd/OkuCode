@@ -289,7 +289,8 @@ const cache = new Map<string, { size: number; mtime: number; outline: FileOutlin
 /** Outlines of the project's source files (cached by size and modification time). */
 export async function build(directory: string, files = listFiles(directory)): Promise<FileOutline[]> {
   if (files.length === 0) return []
-  const ts = await init()
+  // Without tree-sitter (grammars not installed) files are still listed, with no symbols.
+  const ts = await init().catch(() => undefined)
   const out: FileOutline[] = []
   for (const file of files) {
     const absolute = path.join(directory, file)
@@ -307,6 +308,10 @@ export async function build(directory: string, files = listFiles(directory)): Pr
     }
     try {
       const text = readFileSync(absolute, "utf8")
+      if (!ts) {
+        out.push({ path: file, entries: [], words: new Set(text.match(WORD) ?? []) })
+        continue
+      }
       const parser = new ts.Parser()
       parser.setLanguage(await ts.load(languageOf(file)!))
       const tree = parser.parse(text)
@@ -318,7 +323,8 @@ export async function build(directory: string, files = listFiles(directory)): Pr
       cache.set(absolute, { size: stat.size, mtime: stat.mtimeMs, outline })
       out.push(outline)
     } catch {
-      // A grammar that fails to load or a file that cannot be read is left out of the map.
+      // A grammar that fails to load: the file is still listed, with no symbols.
+      out.push({ path: file, entries: [], words: new Set() })
     }
   }
   return out
