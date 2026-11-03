@@ -434,6 +434,11 @@ export function terms(text: string) {
  * approvalMode / approval_mode) in the content, found with git grep or in the outlined files. Best first.
  */
 export function search(directory: string, text: string, limit = 12, minimum = 0): string[] {
+  return scored(directory, text, limit, minimum).map((item) => item.file)
+}
+
+/** search() with the score of each file. */
+export function scored(directory: string, text: string, limit = 12, minimum = 0): { file: string; score: number }[] {
   const words = terms(text)
   if (words.length === 0) return []
   const files = allFiles(directory)
@@ -483,11 +488,29 @@ export function search(directory: string, text: string, limit = 12, minimum = 0)
     .filter(([, value]) => value > minimum)
     .sort((a, b) => b[1] - a[1] || a[0].length - b[0].length)
     .slice(0, limit)
-    .map(([file]) => file)
+    .map(([file, value]) => ({ file, score: value }))
 }
 
 /** The files that match the request with their outlines, for the system prompt; undefined when none match. */
 const recent = new Map<string, { at: number; value: Promise<string | undefined> }>()
+
+/**
+ * The file to attach to a message: the best match when it clearly beats the rest (a word in its path plus words in
+ * its code), and is small enough to send whole. Small models answer from code they see far better than from a list.
+ */
+export function bestFile(directory: string, text: string, maxBytes = 24 * 1024): string | undefined {
+  if (!enabled()) return undefined
+  const [first, second] = scored(directory, text, 2, 19)
+  if (!first || secondary(first.file)) return undefined
+  if (second && second.score >= first.score * 0.9 && second.file.length < first.file.length) return undefined
+  try {
+    const info = statSync(path.join(directory, first.file))
+    if (!info.isFile() || info.size > maxBytes) return undefined
+  } catch {
+    return undefined
+  }
+  return first.file
+}
 
 export function relevant(directory: string, text: string, budget = 2000): Promise<string | undefined> {
   if (!enabled()) return Promise.resolve(undefined)

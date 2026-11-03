@@ -8,12 +8,13 @@ import type { SessionMessage } from "@opencode/schema/session-message"
 import { FSUtil } from "@opencode/util/fs-util"
 import { Effect } from "effect"
 import path from "path"
-import { fileURLToPath } from "url"
+import { fileURLToPath, pathToFileURL } from "url"
 import { Image } from "../image.js"
 import { Instance } from "../instance/service.js"
 import { Mime } from "../mime.js"
 import { OkuMemory } from "../okutobus/memory.js"
 import { OkuMentions } from "../okutobus/mentions.js"
+import { OkuRepoMap } from "../okutobus/repo-map.js"
 import { Plugin } from "../plugin/service.js"
 import { PluginHooks } from "../plugin/hooks.js"
 import { Skill } from "../skill.js"
@@ -72,7 +73,26 @@ export const prepare = Effect.fn("SessionPrompt.prepare")(function* (request: {
         ),
       { concurrency: 4 },
     ).pipe(Effect.map((list) => list.filter((file): file is FileAttachment => file !== undefined)))
-    const files = given || mentioned.length ? [...(given ?? []), ...mentioned] : undefined
+    // Okutobus (OkuCode) FR-18: no file named? Attach the file the repository map clearly matches to the request.
+    const best =
+      given?.length || mentioned.length
+        ? []
+        : yield* Effect.sync(() => OkuRepoMap.bestFile(request.session.location.directory, input.text)).pipe(
+            Effect.catchCause(() => Effect.succeed(undefined)),
+            Effect.flatMap((file) =>
+              file
+                ? materializeAttachment({
+                    uri: pathToFileURL(path.join(request.session.location.directory, file)).href,
+                    name: file,
+                    description: "Found by OkuCode's repository map as the file that best matches this request.",
+                  }).pipe(
+                    Effect.map((attachment) => (attachment.mime === "text/plain" ? [attachment] : [])),
+                    Effect.catch(() => Effect.succeed([] as FileAttachment[])),
+                  )
+                : Effect.succeed([] as FileAttachment[]),
+            ),
+          )
+    const files = given || mentioned.length || best.length ? [...(given ?? []), ...mentioned, ...best] : undefined
     const requested = input.skills
     const selected = yield* Effect.gen(function* () {
       if (!requested?.length) return undefined

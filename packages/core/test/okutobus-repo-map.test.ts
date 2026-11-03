@@ -69,5 +69,8 @@ describe("Okutobus repository map (FR-18)", () => {
     const found = await OkuRepoMap.relevant(dir, "where is the approval mode logic?")
     expect(found?.split("\n")[0]).toBe("app/settings/approval_mode.py")
     expect(found).toContain("def current_mode()  (line 1)")
+    // The clear best match is attached to the message; general questions attach nothing.
+    expect(OkuRepoMap.bestFile(dir, "where is the approval mode logic?")).toBe("app/settings/approval_mode.py")
+    expect(OkuRepoMap.bestFile(dir, "what is a REST API?")).toBeUndefined()
   })
 })
