@@ -10,6 +10,7 @@ export * as OkuApproval from "./approval.js"
 import { readFileSync, statSync } from "node:fs"
 import path from "node:path"
 import { Global } from "@opencode/util/global"
+import { OkuSandbox } from "./sandbox.js"
 
 export const MODES = ["ask", "auto-edit", "full-auto"] as const
 export type Mode = (typeof MODES)[number]
@@ -41,12 +42,19 @@ export function mode(file = settingsFile()): Mode | undefined {
  * this request, or a rule allows this exact command or file pattern (FR-23, e.g. "npm test*": allow); such
  * choices are kept in every mode. Catch-all "allow everything" rules are what the mode replaces.
  */
-export function apply(current: "allow" | "ask", action: string, selected: Mode | undefined, explicitAllow: boolean) {
+export function apply(
+  current: "allow" | "ask",
+  action: string,
+  selected: Mode | undefined,
+  explicitAllow: boolean,
+  // FR-24: Full-auto runs commands without asking only inside the sandbox (or when the sandbox is turned off).
+  sandboxed: () => boolean = () => OkuSandbox.setting() === "off" || OkuSandbox.available(),
+) {
   if (!selected) return current
   const edit = EDIT.has(action)
   const shell = SHELL.has(action)
   if (!edit && !shell) return current
-  if (selected === "full-auto") return "allow"
+  if (selected === "full-auto") return edit || explicitAllow || sandboxed() ? "allow" : "ask"
   if (selected === "auto-edit") return edit || explicitAllow ? "allow" : "ask"
   return explicitAllow ? "allow" : "ask"
 }

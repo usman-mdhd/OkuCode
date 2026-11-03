@@ -42,6 +42,9 @@ export type Settings = {
   disabledSkills?: string[]
   /** FR-18: false turns off the repository map in the system prompt (read by core's OkuRepoMap). */
   repoMap?: boolean
+  /** FR-24: "auto" (sandbox in Full-auto), "on" or "off"; sandboxNetwork false also blocks the network (read by core's OkuSandbox). */
+  sandbox?: string
+  sandboxNetwork?: boolean
 }
 
 type File = { secret: string; users: User[] }

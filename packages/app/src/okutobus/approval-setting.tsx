@@ -14,7 +14,8 @@ export const APPROVAL_OPTIONS: { value: ApprovalMode; label: string; hint: strin
   {
     value: "full-auto",
     label: "Full-auto",
-    hint: "OkuCode changes files and runs commands without asking. Use only in folders you trust (no sandbox yet).",
+    hint:
+      "OkuCode changes files and runs commands without asking. Commands run in a sandbox: they can only change files in the project folder and cannot read keys like ~/.ssh. Without a sandbox (Linux without bubblewrap) commands still ask.",
   },
 ]
 

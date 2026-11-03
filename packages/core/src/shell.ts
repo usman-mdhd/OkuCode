@@ -16,6 +16,7 @@ import { Location } from "./location.js"
 import { Global } from "@opencode/util/global"
 import { ShellSelect } from "./shell/select.js"
 import type { ShellCreateBefore } from "@opencode/plugin/effect/shell"
+import { OkuSandbox } from "./okutobus/sandbox.js"
 import { PluginHooks } from "./plugin/hooks.js"
 import { SessionEnvironment } from "./session/environment.js"
 import { SessionSchema } from "./session/schema.js"
@@ -285,7 +286,16 @@ const layer = () =>
         if (before) yield* before(invocation)
 
         const id = Shell.ID.ascending()
-        const args = ShellSelect.args(invocation.shell, invocation.command)
+        // Okutobus (OkuCode) FR-24: the agent's commands run in the OS sandbox when it is active (Full-auto by default).
+        const sandbox =
+          Schema.is(SessionSchema.ID)(sessionID)
+            ? OkuSandbox.wrap(invocation.shell, ShellSelect.args(invocation.shell, invocation.command), [
+                location.directory,
+                invocation.cwd,
+              ])
+            : undefined
+        if (sandbox?.sandboxed) invocation.env.OKUCODE_SANDBOX = "1"
+        const args = sandbox?.args ?? ShellSelect.args(invocation.shell, invocation.command)
         const file = path.join(outputDir, `${id}.out`)
 
         const info: Info = {
@@ -308,7 +318,7 @@ const layer = () =>
             Effect.gen(function* () {
               const handle = yield* environment.spawner
                 .spawn(
-                  ChildProcess.make(invocation.shell, args, {
+                  ChildProcess.make(sandbox?.program ?? invocation.shell, args, {
                     cwd: invocation.cwd,
                     env: invocation.env,
                     stdin: "ignore",
