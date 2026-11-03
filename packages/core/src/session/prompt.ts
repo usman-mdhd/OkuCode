@@ -15,6 +15,7 @@ import { Mime } from "../mime.js"
 import { OkuMemory } from "../okutobus/memory.js"
 import { OkuMentions } from "../okutobus/mentions.js"
 import { OkuRepoMap } from "../okutobus/repo-map.js"
+import { OkuAudit } from "../okutobus/audit.js"
 import { Plugin } from "../plugin/service.js"
 import { PluginHooks } from "../plugin/hooks.js"
 import { Skill } from "../skill.js"
@@ -93,6 +94,12 @@ export const prepare = Effect.fn("SessionPrompt.prepare")(function* (request: {
             ),
           )
     const files = given || mentioned.length || best.length ? [...(given ?? []), ...mentioned, ...best] : undefined
+    // Okutobus (OkuCode) FR-60: the prompt goes into the audit log.
+    OkuAudit.record(
+      "prompt",
+      { text: input.text, files: (files ?? []).map((file) => file.name ?? "attachment") },
+      { sessionID: request.session.id, directory: request.session.location.directory },
+    )
     const requested = input.skills
     const selected = yield* Effect.gen(function* () {
       if (!requested?.length) return undefined

@@ -3,6 +3,7 @@
 //   Users   add / invite / change role / disable / remove (leads: members only)
 //   Policy  approval mode, auto-test, model routing and team rules for every chat
 //   Sign-in Google sign-in and Gmail invite setup (admins only)
+//   Audit   FR-60 audit log: chain check, days kept, download (admins only)
 import { Button } from "@opencode/ui/button"
 import { Select } from "@opencode/ui/select"
 import { Switch } from "@opencode/ui/switch"
@@ -43,6 +44,16 @@ type Setup = {
   googleReady: boolean
   gmailReady: boolean
 }
+
+type Audit = {
+  enabled: boolean
+  retentionDays: number
+  folder: string
+  check: { ok: boolean; entries: number; files: number; first?: string; last?: string; problem?: { file: string; line: number; reason: string } }
+  days: { date: string; bytes: number }[]
+}
+
+const size = (bytes: number) => (bytes < 1024 ? `${bytes} B` : bytes < 1048576 ? `${(bytes / 1024).toFixed(1)} KB` : `${(bytes / 1048576).toFixed(1)} MB`)
 
 const ROLE_LABELS: Record<Role, string> = { admin: "Admin", lead: "Team lead", member: "Member" }
 const ROLE_OPTIONS = (Object.keys(ROLE_LABELS) as Role[]).map((value) => ({ value, label: ROLE_LABELS[value] }))
@@ -168,6 +179,40 @@ export const SettingsTeam: Component<{ me: Me }> = (props) => {
       await call(server(), "/okucode/api/policy", "PUT", change)
       await reloadPolicy()
       done(message)
+    } catch (error) {
+      failed(error)
+    }
+  }
+
+  // ---- audit log (FR-60) ----
+  const [audit, { refetch: reloadAudit }] = createResource(
+    () => (isAdmin() ? server() : undefined),
+    (http) => call<Audit>(http, "/okucode/api/audit"),
+  )
+  const [keepDays, setKeepDays] = createSignal<string>()
+  const saveAudit = async (change: { enabled?: boolean; retentionDays?: number }, message: string) => {
+    try {
+      await call(server(), "/okucode/api/audit", "PUT", change)
+      await reloadAudit()
+      done(message)
+    } catch (error) {
+      failed(error)
+    }
+  }
+  const download = async (date: string) => {
+    try {
+      const http = server()
+      const response = await fetch(`${http.url.replace(/\/+$/, "")}/okucode/api/audit/download?date=${date}`, {
+        credentials: "include",
+        headers: headers(http),
+      })
+      if (!response.ok) throw new Error("Could not download the audit log.")
+      const url = URL.createObjectURL(await response.blob())
+      const link = document.createElement("a")
+      link.href = url
+      link.download = `okucode-audit-${date}.jsonl`
+      link.click()
+      setTimeout(() => URL.revokeObjectURL(url), 10_000)
     } catch (error) {
       failed(error)
     }
@@ -452,6 +497,80 @@ export const SettingsTeam: Component<{ me: Me }> = (props) => {
                   Save sign-in setup
                 </Button>
               </form>
+            </Section>
+          )}
+        </Show>
+
+        {/* ---------- Audit log (admins) ---------- */}
+        <Show when={isAdmin() && audit()}>
+          {(current) => (
+            <Section
+              title="Audit log"
+              description="Every prompt, tool call and file change, in a chain of hashes: if anyone edits or deletes an entry, the check below shows where."
+            >
+              <div class="mb-3 flex flex-wrap items-center gap-2" data-action="okucode-audit-check">
+                <span
+                  class={`rounded-full px-2 py-0.5 text-11-medium ${current().check.ok ? STATUS.active.class : STATUS.disabled.class}`}
+                >
+                  {current().check.ok
+                    ? `Chain intact: ${current().check.entries} entries`
+                    : `Changed: ${current().check.problem?.file} line ${current().check.problem?.line}`}
+                </span>
+                <Show when={!current().check.ok}>
+                  <span class="text-12-regular text-v2-text-text-danger">{current().check.problem?.reason}</span>
+                </Show>
+                <Button size="small" variant="ghost" onClick={() => void reloadAudit()}>
+                  Check again
+                </Button>
+              </div>
+              <SettingsList>
+                <SettingsRow title="Keep an audit log" description={`Saved in ${current().folder}`}>
+                  <Switch
+                    checked={current().enabled}
+                    onChange={(checked) => void saveAudit({ enabled: checked }, checked ? "Audit log on" : "Audit log off")}
+                    hideLabel
+                  >
+                    Keep an audit log
+                  </Switch>
+                </SettingsRow>
+                <SettingsRow title="Days to keep" description="Older days are deleted. 0 keeps everything.">
+                  <div class="flex items-center gap-2">
+                    <input
+                      class={input.replace("w-full", "w-20")}
+                      type="number"
+                      min="0"
+                      value={keepDays() ?? String(current().retentionDays)}
+                      onInput={(event) => setKeepDays(event.currentTarget.value)}
+                    />
+                    <Show when={keepDays() !== undefined && keepDays() !== String(current().retentionDays)}>
+                      <Button
+                        size="small"
+                        variant="contrast"
+                        onClick={() => {
+                          void saveAudit({ retentionDays: Number(keepDays()) }, "Audit log retention saved")
+                          setKeepDays(undefined)
+                        }}
+                      >
+                        Save
+                      </Button>
+                    </Show>
+                  </div>
+                </SettingsRow>
+              </SettingsList>
+              <Show when={current().days.length > 0}>
+                <div class="mt-3 flex flex-col gap-1">
+                  <span class="text-12-medium text-v2-text-text-base">Download</span>
+                  <div class="flex flex-wrap gap-2">
+                    <For each={current().days.slice(0, 14)}>
+                      {(item) => (
+                        <Button size="small" variant="ghost" onClick={() => void download(item.date)}>
+                          {item.date} · {size(item.bytes)}
+                        </Button>
+                      )}
+                    </For>
+                  </div>
+                </div>
+              </Show>
             </Section>
           )}
         </Show>

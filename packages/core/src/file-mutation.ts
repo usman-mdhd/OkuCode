@@ -9,6 +9,7 @@ import { Environment } from "./environment/index.js"
 import type { Files } from "./environment/index.js"
 import type { FileAccess } from "./file-access.js"
 import { OkuProtect } from "./okutobus/protect.js"
+import { OkuAudit } from "./okutobus/audit.js"
 
 // Okutobus (OkuCode, FR-26): the model only ever sees [REDACTED:…] for secrets; writing that placeholder would
 // destroy the real value, so such writes are refused.
@@ -107,10 +108,9 @@ const layer = Layer.effect(
             Effect.as(true),
             Effect.catchTag("Environment.NotFound", () => Effect.succeed(false)),
           )
-          yield* environment.files.write(
-            input.target.absolute,
-            typeof input.content === "string" ? new TextEncoder().encode(input.content) : input.content,
-          )
+          const bytes = typeof input.content === "string" ? new TextEncoder().encode(input.content) : input.content
+          yield* environment.files.write(input.target.absolute, bytes)
+          OkuAudit.record("file", OkuAudit.fileChange(input.target.absolute, existed ? "changed" : "created", bytes))
           return writeResult(input.target, existed)
         }),
       ),
@@ -125,10 +125,9 @@ const layer = Layer.effect(
             Effect.map((result) => result.bytes),
             Effect.catchTag("Environment.NotFound", () => Effect.undefined),
           )
-          yield* environment.files.write(
-            input.target.absolute,
-            new TextEncoder().encode(Bom.join(next.text, Boolean(current && Bom.has(current)) || next.bom)),
-          )
+          const bytes = new TextEncoder().encode(Bom.join(next.text, Boolean(current && Bom.has(current)) || next.bom))
+          yield* environment.files.write(input.target.absolute, bytes)
+          OkuAudit.record("file", OkuAudit.fileChange(input.target.absolute, current !== undefined ? "changed" : "created", bytes))
           return writeResult(input.target, current !== undefined)
         }),
       ),

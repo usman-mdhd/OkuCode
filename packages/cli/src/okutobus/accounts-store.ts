@@ -45,6 +45,9 @@ export type Settings = {
   /** FR-24: "auto" (sandbox in Full-auto), "on" or "off"; sandboxNetwork false also blocks the network (read by core's OkuSandbox). */
   sandbox?: string
   sandboxNetwork?: boolean
+  /** FR-60: false turns the audit log off; days to keep it (0 keeps everything). Read by core's OkuAudit. */
+  audit?: boolean
+  auditRetentionDays?: number
 }
 
 type File = { secret: string; users: User[] }

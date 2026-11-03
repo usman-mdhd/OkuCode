@@ -15,6 +15,7 @@ import { PluginHooks } from "./plugin/hooks.js"
 import { SessionMessage } from "./session/message.js"
 import { SessionSchema } from "./session/schema.js"
 import { State } from "./state.js"
+import { OkuAudit } from "./okutobus/audit.js"
 import { definition, effectiveName, execute, normalizedName, normalizeContent } from "./tool/runtime.js"
 import { Wildcard } from "./util/wildcard.js"
 
@@ -128,6 +129,17 @@ const layer = Layer.effect(
         id: context.id,
         input,
       }
+      // Okutobus (OkuCode) FR-60: every tool call goes into the audit log.
+      OkuAudit.record(
+        "tool",
+        {
+          tool: name,
+          input,
+          status: "failure" in execution ? "error" : "completed",
+          ...("failure" in execution ? { error: String(execution.failure.message ?? execution.failure) } : {}),
+        },
+        { sessionID: context.sessionID },
+      )
       if ("failure" in execution) {
         const afterEvent: PluginHooks.Domains["tool"]["execute.after"] = {
           ...base,

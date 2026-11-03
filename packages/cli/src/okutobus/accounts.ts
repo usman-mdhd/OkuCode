@@ -11,6 +11,9 @@ import { ServerAuth } from "@opencode/server/auth"
 import { ADMIN_PAGE } from "./admin-page"
 import { activeAdmins, isRole, normalize, type Role, type Settings, type Store, type User } from "./accounts-store"
 import { send } from "./smtp"
+import { readFileSync, statSync } from "node:fs"
+import nodePath from "node:path"
+import { AuditChain } from "@opencode/util/audit-chain"
 
 export type Request = {
   method: string
@@ -305,6 +308,47 @@ export function createAccounts(input: {
     if (path === "/okucode/api/skills" && request.method === "GET")
       return json(200, { disabled: settings().disabledSkills ?? [] })
 
+    // FR-60: the audit log. Admins see whether the hash chain is intact and download a day's log.
+    if (path === "/okucode/api/audit" && request.method === "GET") {
+      if (!isAdmin) return adminOnly()
+      const value = settings()
+      const dir = AuditChain.directory()
+      return json(200, {
+        enabled: value.audit !== false,
+        retentionDays: typeof value.auditRetentionDays === "number" ? value.auditRetentionDays : 90,
+        folder: dir,
+        check: AuditChain.verify(dir),
+        days: AuditChain.files(dir)
+          .slice(-30)
+          .reverse()
+          .map((name) => {
+            let bytes = 0
+            try {
+              bytes = statSync(nodePath.join(dir, name)).size
+            } catch {}
+            return { date: name.slice(0, 10), bytes }
+          }),
+      })
+    }
+    if (path === "/okucode/api/audit/download" && request.method === "GET") {
+      if (!isAdmin) return adminOnly()
+      const date = request.url.searchParams.get("date") ?? ""
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return json(400, { error: "Give a date like 2026-11-03." })
+      try {
+        return {
+          status: 200,
+          headers: {
+            "content-type": "application/x-ndjson; charset=utf-8",
+            "content-disposition": `attachment; filename="okucode-audit-${date}.jsonl"`,
+            "cache-control": "no-store",
+          },
+          body: readFileSync(nodePath.join(AuditChain.directory(), `${date}.jsonl`), "utf8"),
+        }
+      } catch {
+        return json(404, { error: "No audit log for that day." })
+      }
+    }
+
     if (path === "/okucode/api/settings" && request.method === "GET") {
       if (!isAdmin) return adminOnly()
       const value = settings()
@@ -344,6 +388,20 @@ export function createAccounts(input: {
       value.disabledSkills = [...off].sort()
       store.saveSettings(value)
       return json(200, { disabled: value.disabledSkills })
+    }
+
+    if (path === "/okucode/api/audit" && request.method === "PUT") {
+      if (!isAdmin) return adminOnly()
+      const next = await body<{ enabled?: unknown; retentionDays?: unknown }>(request)
+      const value = settings()
+      if (typeof next.enabled === "boolean") value.audit = next.enabled
+      if (next.retentionDays !== undefined) {
+        if (typeof next.retentionDays !== "number" || !Number.isInteger(next.retentionDays) || next.retentionDays < 0 || next.retentionDays > 3650)
+          return json(400, { error: "Days to keep must be a whole number from 0 (keep everything) to 3650." })
+        value.auditRetentionDays = next.retentionDays
+      }
+      store.saveSettings(value)
+      return json(200, { ok: true })
     }
 
     if (path === "/okucode/api/policy" && request.method === "PUT") {

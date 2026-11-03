@@ -234,6 +234,40 @@ describe("OkuCode accounts", () => {
     expect((await t.call("PUT", "/okucode/api/skills", { body: { name: "docx", enabled: true } })).status).toBe(403)
   })
 
+  test("admins see, check and download the audit log; members cannot (FR-60)", async () => {
+    const t = setup()
+    const auditDir = mkdtempSync(path.join(tmpdir(), "oku-audit-api-"))
+    process.env.OKUCODE_AUDIT_DIR = auditDir
+    try {
+      const { AuditChain } = await import("@opencode/util/audit-chain")
+      const base = { seq: 1, time: "2026-11-03T10:00:00.000Z", kind: "prompt" as const, user: "me", data: { text: "hi" }, prev: AuditChain.GENESIS }
+      const entry = { ...base, hash: AuditChain.hashOf(base) }
+      const { writeFileSync } = await import("node:fs")
+      writeFileSync(path.join(auditDir, "2026-11-03.jsonl"), JSON.stringify(entry) + "\n")
+
+      await t.call("POST", "/okucode/auth/password", { body: { password: PASSWORD } })
+      const view = await t.call("GET", "/okucode/api/audit")
+      expect(view.data).toMatchObject({ enabled: true, retentionDays: 90, check: { ok: true, entries: 1 }, days: [{ date: "2026-11-03" }] })
+      const file = await t.call("GET", "/okucode/api/audit/download?date=2026-11-03")
+      expect(file.headers?.["content-disposition"]).toContain("okucode-audit-2026-11-03.jsonl")
+      expect((await t.call("GET", "/okucode/api/audit/download?date=../x")).status).toBe(400)
+      expect((await t.call("PUT", "/okucode/api/audit", { body: { retentionDays: 30 } })).status).toBe(200)
+      expect(t.store.settings().auditRetentionDays).toBe(30)
+      expect((await t.call("PUT", "/okucode/api/audit", { body: { retentionDays: -1 } })).status).toBe(400)
+
+      // A changed entry shows up in the check.
+      writeFileSync(path.join(auditDir, "2026-11-03.jsonl"), JSON.stringify({ ...entry, data: { text: "changed" } }) + "\n")
+      expect((await t.call("GET", "/okucode/api/audit")).data.check).toMatchObject({ ok: false, problem: { line: 1 } })
+
+      await t.call("POST", "/okucode/api/users", { body: { email: "new@okutobus.com", role: "lead" } })
+      t.store.saveSettings({ ...t.store.settings(), google: { clientId: "id", clientSecret: "secret" } })
+      await googleSignIn(t)
+      expect((await t.call("GET", "/okucode/api/audit")).status).toBe(403)
+    } finally {
+      delete process.env.OKUCODE_AUDIT_DIR
+    }
+  })
+
   test("email message is valid MIME", () => {
     const body = message({
       host: "", port: 0, user: "", pass: "", from: "a@b.com", fromName: "OkuCode", to: "c@d.com",
