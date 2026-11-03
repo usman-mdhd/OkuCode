@@ -42,5 +42,7 @@ describe("Okutobus routing (FR-46)", () => {
     expect(OkuRouting.useSmall([user("What is a REST API?")], { ...on, routing: false })).toBe(false)
     expect(OkuRouting.useSmall([user("What is a REST API?")], { routing: true })).toBe(false)
     expect(OkuRouting.useSmall([user("create hello.py")], routed)).toBe(false)
+    // A question that comes with a file (attached or found by the repository map) stays on the main model.
+    expect(OkuRouting.useSmall([{ type: "user", text: "where is the approval mode logic?", files: [{}] } as never], routed)).toBe(false)
   })
 })

@@ -61,5 +61,7 @@ export function useSmall(messages: readonly SessionMessage.Info[], current = set
   if (messages.slice(0, index).some((message) => message.type === "assistant" && message.content.some((part) => part.type === "tool")))
     return false
   const latest = messages[index]
+  // A message with files (named, attached, or found by the repository map) is about the project: main model.
+  if (latest.type === "user" && latest.files?.length) return false
   return latest.type === "user" && simple(latest.text)
 }
