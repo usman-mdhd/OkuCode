@@ -97,7 +97,9 @@ const STATUS: Record<User["status"], { label: string; class: string }> = {
 const input =
   "w-full min-w-0 rounded-md border border-v2-border-border-muted bg-v2-background-bg-base px-2.5 py-1.5 text-13-regular text-v2-text-text-base outline-none focus:border-v2-border-border-focus"
 
-async function call<T>(http: Http, path: string, method = "GET", body?: unknown): Promise<T> {
+async function call<T>(http: Http, path: string, method = "GET", payload?: unknown): Promise<T> {
+  // The server only accepts JSON for changes (it blocks cross-site forms), so DELETE sends "{}" too.
+  const body = payload ?? (method === "GET" ? undefined : {})
   const response = await fetch(`${http.url.replace(/\/+$/, "")}${path}`, {
     method,
     credentials: "include",
