@@ -1,0 +1,45 @@
+# Installing OkuCode (macOS and Linux)
+
+One command installs everything: Bun, OkuCode, the `okucode` command, Ollama with the local models, the settings,
+the 7 team skills and the OkuCode rules. Running it again updates OkuCode. On Windows, use WSL.
+
+## Install
+
+You need access to the OKUTOBUS-TECH/okucode repository on GitHub (sign in first, for example with `gh auth login`).
+
+```
+git clone --depth 1 --branch develop https://github.com/OKUTOBUS-TECH/okucode.git /tmp/okucode-setup
+bash /tmp/okucode-setup/okutobus/install.sh
+```
+
+Then open a new terminal and run `okucode web`.
+
+## Options
+
+| Option | What it does |
+|---|---|
+| `--no-models` | skip Ollama and the local models (for example when you use an API model) |
+| `--from <folder>` | use a folder you already cloned (developers) instead of `~/.okucode/app` |
+| `--branch <name>` | install another branch (default `develop`) |
+| `--no-modify-path` | do not add `~/.local/bin` to PATH |
+| `--uninstall` | remove OkuCode; settings, chats, keys, Ollama and models are kept |
+
+## Models
+
+- Computers with 16 GB of memory or more: `qwen2.5-coder:14b` as the main model (with a 16k context window) and
+  `qwen2.5-coder:3b` for chat titles.
+- Under 16 GB: `qwen2.5-coder:7b` instead of 14B.
+- Settings you already have in `~/.config/opencode/opencode.json` are never changed; only missing ones are added
+  (a backup is saved first).
+
+## Update
+
+```
+okucode update
+```
+
+## Where things are
+
+- OkuCode: `~/.okucode/app` · its Bun: `~/.okucode/bun` · install log: `~/.okucode/install.log`
+- Settings, skills, rules: `~/.config/opencode/` (`opencode.json`, `skills/`, `AGENTS.md`)
+- Chats and data: `~/.local/share/opencode/`

@@ -1,0 +1,1 @@
+Skills from https://github.com/farmage/opencode-skills (branch sync/upstream-v0.4.16-opencode), MIT licence, original author https://github.com/Jeffallan.

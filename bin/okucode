@@ -5,6 +5,7 @@
 #   okucode                 terminal UI in the current folder
 #   okucode web [--port N]  web UI + API on this laptop (http://127.0.0.1:4096 by default)
 #   okucode serve           API server only (see `okucode serve --help`)
+#   okucode update          update OkuCode (installed with okutobus/install.sh)
 set -e
 SELF="$0"
 while [ -L "$SELF" ]; do
@@ -15,6 +16,17 @@ ROOT="$(cd "$(dirname "$SELF")/.." && pwd)"
 CLI="$ROOT/packages/cli"
 APP="$ROOT/packages/app"
 PRELOAD="$CLI/node_modules/@opentui/solid/scripts/preload.js"
+# The installer (okutobus/install.sh) puts the Bun version OkuCode needs in ~/.okucode/bun.
+if [ -x "$HOME/.okucode/bun/bin/bun" ]; then PATH="$HOME/.okucode/bun/bin:$PATH"; export PATH; fi
+
+# okucode update: get the latest version (or, for your own clone, reinstall its packages and rebuild).
+if [ "$1" = "update" ]; then
+  shift
+  if [ "$ROOT" = "$HOME/.okucode/app" ]; then exec bash "$ROOT/okutobus/install.sh" "$@"; fi
+  echo "okucode: this is your own folder ($ROOT). Get changes with git (git pull or git am), then this reinstalls the packages."
+  exec bash "$ROOT/okutobus/install.sh" --from "$ROOT" "$@"
+fi
+
 if [ ! -f "$PRELOAD" ]; then
   echo "okucode: dependencies missing. Run: (cd \"$ROOT\" && bun install)" >&2
   exit 1
