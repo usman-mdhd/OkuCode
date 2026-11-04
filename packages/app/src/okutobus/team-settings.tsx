@@ -48,6 +48,11 @@ type Setup = {
   githubSecretSaved: boolean
   githubCallbackUrl: string
   githubReady: boolean
+  microsoftClientId: string
+  microsoftSecretSaved: boolean
+  microsoftTenant: string
+  microsoftCallbackUrl: string
+  microsoftReady: boolean
 }
 
 type Audit = {
@@ -261,6 +266,9 @@ export const SettingsTeam: Component<{ me: Me }> = (props) => {
         googleClientSecret: form().googleClientSecret ?? "",
         githubClientId: value("githubClientId"),
         githubClientSecret: form().githubClientSecret ?? "",
+        microsoftClientId: value("microsoftClientId"),
+        microsoftClientSecret: form().microsoftClientSecret ?? "",
+        microsoftTenant: value("microsoftTenant"),
         gmailAddress: value("gmailAddress"),
         gmailAppPassword: form().gmailAppPassword ?? "",
         fromName: value("fromName"),
@@ -290,7 +298,7 @@ export const SettingsTeam: Component<{ me: Me }> = (props) => {
 
       <div class="settings-tab-body settings-tab-body--sectioned" data-component="okucode-team">
         {/* ---------- Users ---------- */}
-        <Section title="People" description="Only people added here can sign in to OkuCode with Google.">
+        <Section title="People" description="Only people added here can sign in to OkuCode (Google, GitHub or Microsoft).">
           <form class="mb-4 flex flex-wrap items-center gap-2" onSubmit={addUser}>
             <input
               class={`${input} flex-[1_1_220px]`}
@@ -556,13 +564,16 @@ export const SettingsTeam: Component<{ me: Me }> = (props) => {
         {/* ---------- Sign-in setup (admins) ---------- */}
         <Show when={isAdmin() && setup()}>
           {(current) => (
-            <Section title="Sign-in setup" description="Google and GitHub sign-in for the team, and Gmail for invite emails.">
+            <Section title="Sign-in setup" description="Google, GitHub and Microsoft sign-in for the team, and Gmail for invite emails.">
               <div class="mb-3 flex flex-wrap gap-2">
                 <span class={`rounded-full px-2 py-0.5 text-11-medium ${current().googleReady ? STATUS.active.class : STATUS.invited.class}`}>
                   Google sign-in: {current().googleReady ? "ready" : "not set up"}
                 </span>
                 <span class={`rounded-full px-2 py-0.5 text-11-medium ${current().githubReady ? STATUS.active.class : STATUS.invited.class}`}>
                   GitHub sign-in: {current().githubReady ? "ready" : "not set up"}
+                </span>
+                <span class={`rounded-full px-2 py-0.5 text-11-medium ${current().microsoftReady ? STATUS.active.class : STATUS.invited.class}`}>
+                  Microsoft sign-in: {current().microsoftReady ? "ready" : "not set up"}
                 </span>
                 <span class={`rounded-full px-2 py-0.5 text-11-medium ${current().gmailReady ? STATUS.active.class : STATUS.invited.class}`}>
                   Invite emails: {current().gmailReady ? "ready" : "not set up"}
@@ -613,6 +624,30 @@ export const SettingsTeam: Component<{ me: Me }> = (props) => {
                     value={form().githubClientSecret ?? ""}
                     onInput={set("githubClientSecret")}
                   />
+                </Field>
+                <Field
+                  label="Microsoft client ID"
+                  hint={
+                    <>
+                      portal.azure.com → Microsoft Entra ID → App registrations → New registration (Web). Redirect URI:{" "}
+                      <code class="select-all">{current().microsoftCallbackUrl}</code>
+                    </>
+                  }
+                >
+                  <input class={input} autocomplete="off" placeholder="Application (client) ID" value={value("microsoftClientId")} onInput={set("microsoftClientId")} />
+                </Field>
+                <Field label="Microsoft client secret" hint="App registration → Certificates & secrets → New client secret. Paste the secret's Value, not its ID.">
+                  <input
+                    class={input}
+                    type="password"
+                    autocomplete="new-password"
+                    placeholder={current().microsoftSecretSaved ? "Saved (leave empty to keep it)" : "Client secret value"}
+                    value={form().microsoftClientSecret ?? ""}
+                    onInput={set("microsoftClientSecret")}
+                  />
+                </Field>
+                <Field label="Microsoft tenant" hint="Directory (tenant) ID for your company's accounts only. Leave empty for any Microsoft account.">
+                  <input class={input} autocomplete="off" placeholder="common" value={value("microsoftTenant")} onInput={set("microsoftTenant")} />
                 </Field>
                 <Field label="Gmail address for invites">
                   <input class={input} type="email" placeholder="okucode@okutobus.com" value={value("gmailAddress")} onInput={set("gmailAddress")} />

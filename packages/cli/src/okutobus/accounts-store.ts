@@ -30,6 +30,9 @@ export type Settings = {
   /** FR-56: GitHub OAuth app for sign-in. */
   github?: { clientId?: string; clientSecret?: string }
   githubEndpoints?: { auth?: string; token?: string; user?: string; emails?: string }
+  /** FR-56: Microsoft Entra ID app for sign-in; tenant is the Directory (tenant) ID, or "common". */
+  microsoft?: { clientId?: string; clientSecret?: string; tenant?: string }
+  microsoftEndpoints?: { auth?: string; token?: string; me?: string }
   gmail?: { address?: string; appPassword?: string; fromName?: string }
   /** Test hooks: other Google endpoints (never set in normal use). */
   googleEndpoints?: { auth?: string; token?: string; userinfo?: string }

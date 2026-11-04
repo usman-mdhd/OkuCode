@@ -13,6 +13,7 @@ function setup() {
   const store = new Store({ data: path.join(dir, "data"), config: path.join(dir, "config") })
   const sent: { to: string; subject: string; text: string }[] = []
   const google = { email: "new@okutobus.com", verified: true }
+  const microsoft = { me: { mail: "New@Okutobus.com", userPrincipalName: "new_okutobus.com#EXT#@tenant.onmicrosoft.com", displayName: "New Person" } as Record<string, unknown> }
   const github = {
     emails: [
       { email: "personal@gmail.com", primary: true, verified: true },
@@ -22,6 +23,8 @@ function setup() {
   }
   const fetcher = (async (url: string | URL) => {
     const href = String(url)
+    if (href.includes("login.microsoftonline.com") && href.endsWith("/token")) return new Response(JSON.stringify({ access_token: "ms" }))
+    if (href === "https://graph.microsoft.com/v1.0/me") return new Response(JSON.stringify(microsoft.me))
     if (href.includes("github") && href.includes("access_token")) return new Response(JSON.stringify({ access_token: "gh" }))
     if (href.includes("github") && href.endsWith("/user/emails"))
       return new Response(JSON.stringify(github.emails))
@@ -66,7 +69,7 @@ function setup() {
     keep(response.cookies)
     return { ...response, data: response.body ? JSON.parse(response.body.startsWith("<") ? "{}" : response.body) : undefined }
   }
-  return { store, accounts, call, request, cookies, sent, google, github }
+  return { store, accounts, call, request, cookies, sent, google, github, microsoft }
 }
 
 async function googleSignIn(t: ReturnType<typeof setup>) {
@@ -333,6 +336,35 @@ describe("OkuCode accounts", () => {
     // An unverified email never counts.
     t.github.emails = [{ email: "unverified@okutobus.com", primary: true, verified: false }]
     expect((await signIn()).headers!.location).toBe("/?okucode_error=github_failed")
+  })
+
+  test("Microsoft sign-in: the account's email must be one an admin added (FR-56)", async () => {
+    const t = setup()
+    const signIn = async () => {
+      const start = await t.call("GET", "/okucode/auth/microsoft")
+      const location = new URL(start.headers!.location!)
+      return { location, done: await t.call("GET", `/okucode/auth/microsoft/callback?code=abc&state=${location.searchParams.get("state")}`) }
+    }
+    expect((await t.call("GET", "/okucode/auth/microsoft")).headers!.location).toBe("/?okucode_error=microsoft_not_set_up")
+    t.store.saveSettings({ microsoft: { clientId: "ms-id", clientSecret: "ms-secret" } })
+    expect((await t.call("GET", "/okucode/auth/config")).data).toMatchObject({ microsoft: true })
+
+    const first = await signIn()
+    expect(first.location.origin + first.location.pathname).toBe("https://login.microsoftonline.com/common/oauth2/v2.0/authorize")
+    expect(first.location.searchParams.get("redirect_uri")).toBe("http://localhost:4096/okucode/auth/microsoft/callback")
+    expect(first.done.headers!.location).toBe("/?okucode_error=not_invited&email=new%40okutobus.com")
+
+    await t.call("POST", "/okucode/auth/password", { body: { password: PASSWORD } })
+    await t.call("POST", "/okucode/api/users", { body: { email: "new@okutobus.com" } })
+    t.store.saveSettings({ ...t.store.settings(), microsoft: { clientId: "ms-id", clientSecret: "ms-secret", tenant: "okutobus-tenant" } })
+    const second = await signIn()
+    expect(second.location.pathname).toBe("/okutobus-tenant/oauth2/v2.0/authorize")
+    expect(second.done.headers!.location).toBe("/")
+    expect(t.store.get("new@okutobus.com")).toMatchObject({ status: "active", name: "New Person" })
+
+    // No usable email (guest sign-in name only): refused.
+    t.microsoft.me = { mail: null, userPrincipalName: "x_gmail.com#EXT#@tenant.onmicrosoft.com" }
+    expect((await signIn()).done.headers!.location).toBe("/?okucode_error=microsoft_failed")
   })
 
   test("admins save GitHub sign-in settings without losing Google's", async () => {

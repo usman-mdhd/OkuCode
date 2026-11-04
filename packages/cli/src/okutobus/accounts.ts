@@ -9,7 +9,7 @@ import { createHmac, randomBytes, timingSafeEqual } from "node:crypto"
 import { Option } from "effect"
 import { ServerAuth } from "@opencode/server/auth"
 import { ADMIN_PAGE } from "./admin-page"
-import { activeAdmins, isRole, normalize, type Role, type Settings, type Store, type User } from "./accounts-store"
+import { activeAdmins, isRole, normalize, validEmail, type Role, type Settings, type Store, type User } from "./accounts-store"
 import { send } from "./smtp"
 import { readFileSync, statSync } from "node:fs"
 import nodePath from "node:path"
@@ -42,6 +42,13 @@ const GITHUB = {
   token: "https://github.com/login/oauth/access_token",
   user: "https://api.github.com/user",
   emails: "https://api.github.com/user/emails",
+}
+// FR-56: Microsoft sign-in (Microsoft Entra ID / Microsoft 365 work accounts, and personal Microsoft accounts with
+// the "common" tenant). The account's email must be one an admin added.
+const MICROSOFT = {
+  auth: (tenant: string) => `https://login.microsoftonline.com/${encodeURIComponent(tenant)}/oauth2/v2.0/authorize`,
+  token: (tenant: string) => `https://login.microsoftonline.com/${encodeURIComponent(tenant)}/oauth2/v2.0/token`,
+  me: "https://graph.microsoft.com/v1.0/me",
 }
 
 const json = (status: number, value: unknown, cookies?: string[]): Response => ({
@@ -132,6 +139,8 @@ export function createAccounts(input: {
   const secure = (request: Request) => publicUrl(request).startsWith("https:")
   const googleReady = (value: Settings = settings()) => !!(value.google?.clientId && value.google?.clientSecret)
   const githubReady = (value: Settings = settings()) => !!(value.github?.clientId && value.github?.clientSecret)
+  const microsoftReady = (value: Settings = settings()) => !!(value.microsoft?.clientId && value.microsoft?.clientSecret)
+  const microsoftTenant = (value: Settings = settings()) => value.microsoft?.tenant?.trim() || "common"
   const gmailReady = (value: Settings = settings()) => !!(value.gmail?.address && value.gmail?.appPassword)
 
   function signInCookies(request: Request, email: string) {
@@ -183,18 +192,19 @@ export function createAccounts(input: {
     if (!gmailReady(config)) throw new Error("Set up Gmail in the Setup tab to send invite emails.")
     const link = publicUrl(request)
     const inviter = by === OWNER ? "The OkuCode admin" : by
-    const how =
-      googleReady(config) && githubReady(config)
-        ? "Google or GitHub"
-        : githubReady(config) && !googleReady(config)
-          ? "GitHub"
-          : "Google"
+    const providers = [
+      googleReady(config) ? "Google" : undefined,
+      githubReady(config) ? "GitHub" : undefined,
+      microsoftReady(config) ? "Microsoft" : undefined,
+    ].filter((item): item is string => !!item)
+    if (providers.length === 0) providers.push("Google")
+    const how = providers.length > 1 ? `${providers.slice(0, -1).join(", ")} or ${providers.at(-1)}` : providers[0]!
     const text = [
       `Hi,`,
       ``,
       `${inviter} invited you to OkuCode, the Okutobus AI coding assistant.`,
       ``,
-      `Open ${link} and choose "Continue with ${how === "Google or GitHub" ? "Google" : how}"${how === "Google or GitHub" ? ' or "Continue with GitHub"' : ""} using this email address (${user.email}).`,
+      `Open ${link} and choose ${providers.map((item) => `"Continue with ${item}"`).join(" or ")} using this email address (${user.email}).`,
       ``,
       `OkuCode`,
     ].join("\n")
@@ -371,6 +381,79 @@ export function createAccounts(input: {
     }
   }
 
+  // ---- Microsoft sign-in (FR-56) ----
+
+  function microsoftStart(request: Request): Response {
+    const config = settings()
+    if (!microsoftReady(config)) return redirect("/?okucode_error=microsoft_not_set_up")
+    const base = publicUrl(request)
+    const here = `${request.url.protocol}//${request.headers.host ?? request.url.host}`
+    if (URL.parse(base)?.host !== URL.parse(here)?.host) return redirect(`${base}/okucode/auth/microsoft`)
+    const state = randomBytes(16).toString("base64url")
+    const url = new URL(config.microsoftEndpoints?.auth ?? MICROSOFT.auth(microsoftTenant(config)))
+    url.searchParams.set("client_id", config.microsoft!.clientId!)
+    url.searchParams.set("redirect_uri", `${base}/okucode/auth/microsoft/callback`)
+    url.searchParams.set("response_type", "code")
+    url.searchParams.set("response_mode", "query")
+    url.searchParams.set("scope", "openid email profile User.Read")
+    url.searchParams.set("state", state)
+    url.searchParams.set("prompt", "select_account")
+    return redirect(url.href, [cookie(STATE_COOKIE, `${state}.${sign(state)}`, 600, secure(request))])
+  }
+
+  async function microsoftCallback(request: Request): Promise<Response> {
+    const fail = (code: string, extra?: string) =>
+      redirect(`/?okucode_error=${code}${extra ? `&email=${encodeURIComponent(extra)}` : ""}`, [
+        cookie(STATE_COOKIE, "", 0, secure(request)),
+      ])
+    const config = settings()
+    if (!microsoftReady(config)) return fail("microsoft_not_set_up")
+    const state = request.url.searchParams.get("state") ?? ""
+    const [saved, signature] = (request.cookies[STATE_COOKIE] ?? "").split(".")
+    if (!state || !saved || !signature || saved !== state || !same(signature, sign(saved))) return fail("try_again")
+    const code = request.url.searchParams.get("code")
+    if (!code) return fail("cancelled")
+    try {
+      const token = await http(config.microsoftEndpoints?.token ?? MICROSOFT.token(microsoftTenant(config)), {
+        method: "POST",
+        headers: { "content-type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams({
+          code,
+          client_id: config.microsoft!.clientId!,
+          client_secret: config.microsoft!.clientSecret!,
+          redirect_uri: `${publicUrl(request)}/okucode/auth/microsoft/callback`,
+          grant_type: "authorization_code",
+          scope: "openid email profile User.Read",
+        }),
+      })
+      if (!token.ok) return fail("microsoft_failed")
+      const { access_token } = (await token.json()) as { access_token?: string }
+      if (!access_token) return fail("microsoft_failed")
+      const me = await http(config.microsoftEndpoints?.me ?? MICROSOFT.me, {
+        headers: { authorization: `Bearer ${access_token}` },
+      })
+      if (!me.ok) return fail("microsoft_failed")
+      const profile = (await me.json()) as { mail?: string | null; userPrincipalName?: string; displayName?: string }
+      // Work accounts: "mail"; accounts without a mailbox: the sign-in name, when it is an email address.
+      const candidates = [profile.mail, profile.userPrincipalName]
+        .filter((item): item is string => !!item && validEmail(item) && !item.includes("#EXT#"))
+        .map(normalize)
+      if (candidates.length === 0) return fail("microsoft_failed")
+      const email = candidates.find((item) => store.get(item)) ?? candidates[0]!
+      const user = store.get(email)
+      if (!user) return fail("not_invited", email)
+      if (user.status === "disabled") return fail("disabled", email)
+      store.update(email, (item) => {
+        item.status = "active"
+        item.name = profile.displayName ?? item.name
+        item.lastLogin = now()
+      })
+      return redirect("/", [...signInCookies(request, email), cookie(STATE_COOKIE, "", 0, secure(request))])
+    } catch {
+      return fail("microsoft_failed")
+    }
+  }
+
   // ---- admin API ----
 
   async function admin(request: Request, me: User, path: string): Promise<Response> {
@@ -477,6 +560,11 @@ export function createAccounts(input: {
         githubSecretSaved: !!value.github?.clientSecret,
         githubCallbackUrl: `${publicUrl(request)}/okucode/auth/github/callback`,
         githubReady: githubReady(value),
+        microsoftClientId: value.microsoft?.clientId ?? "",
+        microsoftSecretSaved: !!value.microsoft?.clientSecret,
+        microsoftTenant: value.microsoft?.tenant ?? "",
+        microsoftCallbackUrl: `${publicUrl(request)}/okucode/auth/microsoft/callback`,
+        microsoftReady: microsoftReady(value),
         gmailReady: gmailReady(value),
       })
     }
@@ -545,6 +633,9 @@ export function createAccounts(input: {
         googleClientSecret?: string
         githubClientId?: string
         githubClientSecret?: string
+        microsoftClientId?: string
+        microsoftClientSecret?: string
+        microsoftTenant?: string
         gmailAddress?: string
         gmailAppPassword?: string
         fromName?: string
@@ -558,6 +649,12 @@ export function createAccounts(input: {
         clientId: (next.googleClientId ?? "").trim() || undefined,
         clientSecret: (next.googleClientSecret ?? "").trim() || value.google?.clientSecret,
       }
+      if (next.microsoftClientId !== undefined || next.microsoftClientSecret !== undefined || next.microsoftTenant !== undefined)
+        value.microsoft = {
+          clientId: (next.microsoftClientId ?? "").trim() || undefined,
+          clientSecret: (next.microsoftClientSecret ?? "").trim() || value.microsoft?.clientSecret,
+          tenant: (next.microsoftTenant ?? "").trim() || undefined,
+        }
       if (next.githubClientId !== undefined || next.githubClientSecret !== undefined)
         value.github = {
           clientId: (next.githubClientId ?? "").trim() || undefined,
@@ -650,11 +747,18 @@ export function createAccounts(input: {
       if (!path.startsWith("/okucode/")) return undefined
 
       if (path === "/okucode/auth/config")
-        return json(200, { google: googleReady(), github: githubReady(), accounts: store.enabled() || googleReady() || githubReady() })
+        return json(200, {
+          google: googleReady(),
+          github: githubReady(),
+          microsoft: microsoftReady(),
+          accounts: store.enabled() || googleReady() || githubReady() || microsoftReady(),
+        })
       if (path === "/okucode/auth/google" && request.method === "GET") return googleStart(request)
       if (path === "/okucode/auth/google/callback" && request.method === "GET") return googleCallback(request)
       if (path === "/okucode/auth/github" && request.method === "GET") return githubStart(request)
       if (path === "/okucode/auth/github/callback" && request.method === "GET") return githubCallback(request)
+      if (path === "/okucode/auth/microsoft" && request.method === "GET") return microsoftStart(request)
+      if (path === "/okucode/auth/microsoft/callback" && request.method === "GET") return microsoftCallback(request)
       if (path === "/okucode/auth/logout" && request.method === "POST") return json(200, { ok: true }, signOutCookies(request))
       if (path === "/okucode/auth/password" && request.method === "POST") {
         if (!sameOrigin(request)) return json(403, { error: "Request blocked." })
