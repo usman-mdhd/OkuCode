@@ -12,6 +12,8 @@ import { userName } from "@/home/user-name"
 import { sessionTitle } from "@/session/title"
 import { useSettingsCommand, useSettingsDialog } from "@/settings/command"
 import { usePlatform } from "@/runtime/platform/platform"
+import { Menu } from "@opencode/ui/menu"
+import { ServerConnection } from "@/runtime/server/registry"
 
 const COLLAPSED_KEY = "okucode.sidebar.collapsed"
 
@@ -50,18 +52,31 @@ const ICONS = {
   help: "M8 14.5A6.5 6.5 0 1 0 8 1.5a6.5 6.5 0 0 0 0 13ZM6.2 6.2a1.9 1.9 0 0 1 3.6.7c0 1.3-1.8 1.6-1.8 2.8M8 11.6h.01",
 }
 
-function ChatRow(props: { record: HomeSessionRecord; active: boolean; open: () => void }) {
+// Right-click a chat to open or delete it (delete asks first).
+function ChatRow(props: { record: HomeSessionRecord; active: boolean; open: () => void; remove: () => void }) {
   const title = () => sessionTitle(props.record.session.title) || "New chat"
   return (
-    <button
-      type="button"
-      class={`${row} text-[13.5px]`}
-      classList={{ "bg-v2-background-bg-layer-02": props.active }}
-      title={`${title()} · ${props.record.projectName}`}
-      onClick={props.open}
-    >
-      <span class="truncate">{title()}</span>
-    </button>
+    <Menu.Context modal={false}>
+      <Menu.Context.Trigger
+        as="button"
+        type="button"
+        class={`${row} text-[13.5px]`}
+        classList={{ "bg-v2-background-bg-layer-02": props.active }}
+        title={`${title()} · ${props.record.projectName}`}
+        onClick={props.open}
+      >
+        <span class="truncate">{title()}</span>
+      </Menu.Context.Trigger>
+      <Menu.Context.Portal>
+        <Menu.Context.Content style={{ "min-width": "160px" }}>
+          <Menu.Item onSelect={props.open}>Open</Menu.Item>
+          <Menu.Separator />
+          <Menu.Item onSelect={props.remove} data-action="okucode-chat-delete" class="text-v2-text-text-critical">
+            Delete chat
+          </Menu.Item>
+        </Menu.Context.Content>
+      </Menu.Context.Portal>
+    </Menu.Context>
   )
 }
 
@@ -98,6 +113,10 @@ export function OkuCodeSidebar() {
       .filter((record) => (sessionTitle(record.session.title) ?? "").toLowerCase().includes(text))
       .slice(0, 50)
   })
+  const removeChat = (record: HomeSessionRecord) => {
+    const conn = server()
+    if (conn) sessions.session.showDelete(ServerConnection.key(conn), record.session)
+  }
   const isOpen = (record: HomeSessionRecord) => location.pathname.endsWith(`/session/${record.session.id}`)
   // Signed-in person (Google account or the owner with the server password).
   const [me] = createResource(
@@ -257,7 +276,7 @@ export function OkuCodeSidebar() {
                   <Show when={group.sessions.length > 0}>
                     <div class="mb-2">
                       <div class="px-2.5 pb-1 pt-2 text-[12px] font-medium text-v2-text-text-faint">{group.title}</div>
-                      <For each={group.sessions}>{(record) => <ChatRow record={record} active={isOpen(record)} open={() => sessions.session.open(record.session)} />}</For>
+                      <For each={group.sessions}>{(record) => <ChatRow record={record} active={isOpen(record)} open={() => sessions.session.open(record.session)} remove={() => removeChat(record)} />}</For>
                     </div>
                   </Show>
                 )}
@@ -265,7 +284,7 @@ export function OkuCodeSidebar() {
             }
           >
             <For each={found()} fallback={<span class="px-2.5 text-[13px] text-v2-text-text-faint">No chats found</span>}>
-              {(record) => <ChatRow record={record} active={isOpen(record)} open={() => sessions.session.open(record.session)} />}
+              {(record) => <ChatRow record={record} active={isOpen(record)} open={() => sessions.session.open(record.session)} remove={() => removeChat(record)} />}
             </For>
           </Show>
         </div>

@@ -982,10 +982,10 @@ export const dict = {
   "settings.permissions.tool.doom_loop.title": "Doom Loop",
   "settings.permissions.tool.doom_loop.description": "Detect repeated tool calls with identical input",
 
-  "session.delete.failed.title": "Failed to delete session",
-  "session.delete.title": "Delete session",
-  "session.delete.confirm": 'Delete session "{{name}}"?',
-  "session.delete.button": "Delete session",
+  "session.delete.failed.title": "Could not delete the chat",
+  "session.delete.title": "Delete chat",
+  "session.delete.confirm": 'Delete the chat "{{name}}"? This cannot be undone.',
+  "session.delete.button": "Delete chat",
 
   "workspace.new": "New worktree",
   "common.viewAll": "View all",
