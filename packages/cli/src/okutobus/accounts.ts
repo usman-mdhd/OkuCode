@@ -36,6 +36,13 @@ const GOOGLE = {
   token: "https://oauth2.googleapis.com/token",
   userinfo: "https://openidconnect.googleapis.com/v1/userinfo",
 }
+// FR-56: GitHub sign-in (OAuth app). The person's verified primary email must be one an admin added.
+const GITHUB = {
+  auth: "https://github.com/login/oauth/authorize",
+  token: "https://github.com/login/oauth/access_token",
+  user: "https://api.github.com/user",
+  emails: "https://api.github.com/user/emails",
+}
 
 const json = (status: number, value: unknown, cookies?: string[]): Response => ({
   status,
@@ -124,6 +131,7 @@ export function createAccounts(input: {
 
   const secure = (request: Request) => publicUrl(request).startsWith("https:")
   const googleReady = (value: Settings = settings()) => !!(value.google?.clientId && value.google?.clientSecret)
+  const githubReady = (value: Settings = settings()) => !!(value.github?.clientId && value.github?.clientSecret)
   const gmailReady = (value: Settings = settings()) => !!(value.gmail?.address && value.gmail?.appPassword)
 
   function signInCookies(request: Request, email: string) {
@@ -175,12 +183,18 @@ export function createAccounts(input: {
     if (!gmailReady(config)) throw new Error("Set up Gmail in the Setup tab to send invite emails.")
     const link = publicUrl(request)
     const inviter = by === OWNER ? "The OkuCode admin" : by
+    const how =
+      googleReady(config) && githubReady(config)
+        ? "Google or GitHub"
+        : githubReady(config) && !googleReady(config)
+          ? "GitHub"
+          : "Google"
     const text = [
       `Hi,`,
       ``,
       `${inviter} invited you to OkuCode, the Okutobus AI coding assistant.`,
       ``,
-      `Open ${link} and choose "Sign in with Google" using this email address (${user.email}).`,
+      `Open ${link} and choose "Continue with ${how === "Google or GitHub" ? "Google" : how}"${how === "Google or GitHub" ? ' or "Continue with GitHub"' : ""} using this email address (${user.email}).`,
       ``,
       `OkuCode`,
     ].join("\n")
@@ -188,7 +202,7 @@ export function createAccounts(input: {
 <div style="max-width:480px;margin:auto;background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:28px">
 <h2 style="margin:0 0 12px;font-size:20px">You're invited to OkuCode</h2>
 <p style="line-height:1.5">${escapeHtml(inviter)} invited you to <b>OkuCode</b>, the Okutobus AI coding assistant.</p>
-<p style="line-height:1.5">Sign in with your Google account <b>${escapeHtml(user.email)}</b>.</p>
+<p style="line-height:1.5">Sign in with your ${how} account <b>${escapeHtml(user.email)}</b>.</p>
 <p style="margin:24px 0"><a href="${escapeHtml(link)}" style="background:#111;color:#fff;text-decoration:none;padding:10px 18px;border-radius:8px;display:inline-block">Open OkuCode</a></p>
 <p style="color:#6b7280;font-size:12px">If the button doesn't work, open ${escapeHtml(link)}</p>
 </div></body></html>`
@@ -276,6 +290,84 @@ export function createAccounts(input: {
       return redirect("/", [...signInCookies(request, email), cookie(STATE_COOKIE, "", 0, secure(request))])
     } catch {
       return fail("google_failed")
+    }
+  }
+
+  // ---- GitHub sign-in (FR-56) ----
+
+  function githubStart(request: Request): Response {
+    const config = settings()
+    if (!githubReady(config)) return redirect("/?okucode_error=github_not_set_up")
+    const base = publicUrl(request)
+    const here = `${request.url.protocol}//${request.headers.host ?? request.url.host}`
+    if (URL.parse(base)?.host !== URL.parse(here)?.host) return redirect(`${base}/okucode/auth/github`)
+    const state = randomBytes(16).toString("base64url")
+    const url = new URL(config.githubEndpoints?.auth ?? GITHUB.auth)
+    url.searchParams.set("client_id", config.github!.clientId!)
+    url.searchParams.set("redirect_uri", `${base}/okucode/auth/github/callback`)
+    url.searchParams.set("scope", "read:user user:email")
+    url.searchParams.set("state", state)
+    url.searchParams.set("allow_signup", "false")
+    return redirect(url.href, [cookie(STATE_COOKIE, `${state}.${sign(state)}`, 600, secure(request))])
+  }
+
+  async function githubCallback(request: Request): Promise<Response> {
+    const fail = (code: string, extra?: string) =>
+      redirect(`/?okucode_error=${code}${extra ? `&email=${encodeURIComponent(extra)}` : ""}`, [
+        cookie(STATE_COOKIE, "", 0, secure(request)),
+      ])
+    const config = settings()
+    if (!githubReady(config)) return fail("github_not_set_up")
+    const state = request.url.searchParams.get("state") ?? ""
+    const [saved, signature] = (request.cookies[STATE_COOKIE] ?? "").split(".")
+    if (!state || !saved || !signature || saved !== state || !same(signature, sign(saved))) return fail("try_again")
+    const code = request.url.searchParams.get("code")
+    if (!code) return fail("cancelled")
+    try {
+      const token = await http(config.githubEndpoints?.token ?? GITHUB.token, {
+        method: "POST",
+        headers: { "content-type": "application/x-www-form-urlencoded", accept: "application/json" },
+        body: new URLSearchParams({
+          code,
+          client_id: config.github!.clientId!,
+          client_secret: config.github!.clientSecret!,
+          redirect_uri: `${publicUrl(request)}/okucode/auth/github/callback`,
+        }),
+      })
+      if (!token.ok) return fail("github_failed")
+      const { access_token } = (await token.json()) as { access_token?: string }
+      if (!access_token) return fail("github_failed")
+      const headers = {
+        authorization: `Bearer ${access_token}`,
+        accept: "application/vnd.github+json",
+        "user-agent": "OkuCode",
+      }
+      const emails = await http(config.githubEndpoints?.emails ?? GITHUB.emails, { headers })
+      if (!emails.ok) return fail("github_failed")
+      const list = (await emails.json()) as { email?: string; primary?: boolean; verified?: boolean }[]
+      const verified = list.filter((item) => item.email && item.verified)
+      // The primary email first, then any other verified email an admin added.
+      const candidates = [...verified.filter((item) => item.primary), ...verified.filter((item) => !item.primary)].map(
+        (item) => normalize(item.email!),
+      )
+      if (candidates.length === 0) return fail("github_failed")
+      const email = candidates.find((item) => store.get(item)) ?? candidates[0]!
+      const user = store.get(email)
+      if (!user) return fail("not_invited", email)
+      if (user.status === "disabled") return fail("disabled", email)
+      type Profile = { name?: string; login?: string; avatar_url?: string }
+      const profile: Profile = await http(config.githubEndpoints?.user ?? GITHUB.user, { headers })
+        .then((response) => (response.ok ? (response.json() as Promise<Profile>) : {}))
+        .catch(() => ({}))
+      store.update(email, (item) => {
+        item.status = "active"
+        item.name = profile.name ?? profile.login ?? item.name
+        item.picture = profile.avatar_url ?? item.picture
+        item.lastLogin = now()
+      })
+      return redirect("/", [...signInCookies(request, email), cookie(STATE_COOKIE, "", 0, secure(request))])
+    } catch {
+      return fail("github_failed")
     }
   }
 
@@ -381,6 +473,10 @@ export function createAccounts(input: {
         gmailPasswordSaved: !!value.gmail?.appPassword,
         fromName: value.gmail?.fromName ?? "OkuCode",
         googleReady: googleReady(value),
+        githubClientId: value.github?.clientId ?? "",
+        githubSecretSaved: !!value.github?.clientSecret,
+        githubCallbackUrl: `${publicUrl(request)}/okucode/auth/github/callback`,
+        githubReady: githubReady(value),
         gmailReady: gmailReady(value),
       })
     }
@@ -447,6 +543,8 @@ export function createAccounts(input: {
         publicUrl?: string
         googleClientId?: string
         googleClientSecret?: string
+        githubClientId?: string
+        githubClientSecret?: string
         gmailAddress?: string
         gmailAppPassword?: string
         fromName?: string
@@ -460,6 +558,11 @@ export function createAccounts(input: {
         clientId: (next.googleClientId ?? "").trim() || undefined,
         clientSecret: (next.googleClientSecret ?? "").trim() || value.google?.clientSecret,
       }
+      if (next.githubClientId !== undefined || next.githubClientSecret !== undefined)
+        value.github = {
+          clientId: (next.githubClientId ?? "").trim() || undefined,
+          clientSecret: (next.githubClientSecret ?? "").trim() || value.github?.clientSecret,
+        }
       value.gmail = {
         address: (next.gmailAddress ?? "").trim() || undefined,
         appPassword: (next.gmailAppPassword ?? "").replace(/\s+/g, "") || value.gmail?.appPassword,
@@ -547,9 +650,11 @@ export function createAccounts(input: {
       if (!path.startsWith("/okucode/")) return undefined
 
       if (path === "/okucode/auth/config")
-        return json(200, { google: googleReady(), accounts: store.enabled() || googleReady() })
+        return json(200, { google: googleReady(), github: githubReady(), accounts: store.enabled() || googleReady() || githubReady() })
       if (path === "/okucode/auth/google" && request.method === "GET") return googleStart(request)
       if (path === "/okucode/auth/google/callback" && request.method === "GET") return googleCallback(request)
+      if (path === "/okucode/auth/github" && request.method === "GET") return githubStart(request)
+      if (path === "/okucode/auth/github/callback" && request.method === "GET") return githubCallback(request)
       if (path === "/okucode/auth/logout" && request.method === "POST") return json(200, { ok: true }, signOutCookies(request))
       if (path === "/okucode/auth/password" && request.method === "POST") {
         if (!sameOrigin(request)) return json(403, { error: "Request blocked." })

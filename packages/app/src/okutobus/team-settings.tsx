@@ -44,6 +44,10 @@ type Setup = {
   fromName: string
   googleReady: boolean
   gmailReady: boolean
+  githubClientId: string
+  githubSecretSaved: boolean
+  githubCallbackUrl: string
+  githubReady: boolean
 }
 
 type Audit = {
@@ -255,6 +259,8 @@ export const SettingsTeam: Component<{ me: Me }> = (props) => {
         publicUrl: value("publicUrl"),
         googleClientId: value("googleClientId"),
         googleClientSecret: form().googleClientSecret ?? "",
+        githubClientId: value("githubClientId"),
+        githubClientSecret: form().githubClientSecret ?? "",
         gmailAddress: value("gmailAddress"),
         gmailAppPassword: form().gmailAppPassword ?? "",
         fromName: value("fromName"),
@@ -550,10 +556,13 @@ export const SettingsTeam: Component<{ me: Me }> = (props) => {
         {/* ---------- Sign-in setup (admins) ---------- */}
         <Show when={isAdmin() && setup()}>
           {(current) => (
-            <Section title="Sign-in setup" description="Google sign-in for the team, and Gmail for invite emails.">
+            <Section title="Sign-in setup" description="Google and GitHub sign-in for the team, and Gmail for invite emails.">
               <div class="mb-3 flex flex-wrap gap-2">
                 <span class={`rounded-full px-2 py-0.5 text-11-medium ${current().googleReady ? STATUS.active.class : STATUS.invited.class}`}>
                   Google sign-in: {current().googleReady ? "ready" : "not set up"}
+                </span>
+                <span class={`rounded-full px-2 py-0.5 text-11-medium ${current().githubReady ? STATUS.active.class : STATUS.invited.class}`}>
+                  GitHub sign-in: {current().githubReady ? "ready" : "not set up"}
                 </span>
                 <span class={`rounded-full px-2 py-0.5 text-11-medium ${current().gmailReady ? STATUS.active.class : STATUS.invited.class}`}>
                   Invite emails: {current().gmailReady ? "ready" : "not set up"}
@@ -582,6 +591,27 @@ export const SettingsTeam: Component<{ me: Me }> = (props) => {
                     placeholder={current().googleSecretSaved ? "Saved (leave empty to keep it)" : "GOCSPX-…"}
                     value={form().googleClientSecret ?? ""}
                     onInput={set("googleClientSecret")}
+                  />
+                </Field>
+                <Field
+                  label="GitHub client ID"
+                  hint={
+                    <>
+                      github.com → Settings → Developer settings → OAuth Apps → New OAuth App. Authorization callback URL:{" "}
+                      <code class="select-all">{current().githubCallbackUrl}</code>
+                    </>
+                  }
+                >
+                  <input class={input} autocomplete="off" placeholder="Ov23li…" value={value("githubClientId")} onInput={set("githubClientId")} />
+                </Field>
+                <Field label="GitHub client secret">
+                  <input
+                    class={input}
+                    type="password"
+                    autocomplete="new-password"
+                    placeholder={current().githubSecretSaved ? "Saved (leave empty to keep it)" : "Generate a new client secret on the OAuth App page"}
+                    value={form().githubClientSecret ?? ""}
+                    onInput={set("githubClientSecret")}
                   />
                 </Field>
                 <Field label="Gmail address for invites">

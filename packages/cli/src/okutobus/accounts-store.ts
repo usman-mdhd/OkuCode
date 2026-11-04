@@ -27,6 +27,9 @@ export type User = {
 export type Settings = {
   publicUrl?: string
   google?: { clientId?: string; clientSecret?: string }
+  /** FR-56: GitHub OAuth app for sign-in. */
+  github?: { clientId?: string; clientSecret?: string }
+  githubEndpoints?: { auth?: string; token?: string; user?: string; emails?: string }
   gmail?: { address?: string; appPassword?: string; fromName?: string }
   /** Test hooks: other Google endpoints (never set in normal use). */
   googleEndpoints?: { auth?: string; token?: string; userinfo?: string }

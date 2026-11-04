@@ -23,16 +23,24 @@ export async function fetchMe(http: ServerConnection.HttpBase | undefined): Prom
   }
 }
 
-export async function googleEnabled(url: string) {
+/** Which sign-in providers the server has set up (FR-56: Google and GitHub). */
+export async function signInProviders(url: string): Promise<{ google: boolean; github: boolean }> {
   try {
     const response = await fetch(`${base(url)}/okucode/auth/config`, { credentials: "include" })
-    return response.ok && ((await response.json()) as { google?: boolean }).google === true
+    if (!response.ok) return { google: false, github: false }
+    const value = (await response.json()) as { google?: boolean; github?: boolean }
+    return { google: value.google === true, github: value.github === true }
   } catch {
-    return false
+    return { google: false, github: false }
   }
 }
 
+export async function googleEnabled(url: string) {
+  return (await signInProviders(url)).google
+}
+
 export const googleSignInUrl = (url: string) => `${base(url)}/okucode/auth/google`
+export const githubSignInUrl = (url: string) => `${base(url)}/okucode/auth/github`
 export const adminPanelUrl = (url: string) => `${base(url)}/okucode/admin`
 
 export async function signOut(url: string) {
@@ -45,15 +53,18 @@ export async function signOut(url: string) {
   location.reload()
 }
 
-/** Message for ?okucode_error=… after a Google sign-in that did not work. */
+/** Message for ?okucode_error=… after a Google or GitHub sign-in that did not work. */
 export function signInError(search: string) {
   const params = new URLSearchParams(search)
   const code = params.get("okucode_error")
   if (!code) return undefined
   const email = params.get("email")
   if (code === "not_invited")
-    return `${email ?? "This Google account"} hasn't been added to OkuCode yet. Ask your admin to invite you.`
+    return `${email ?? "This account"} hasn't been added to OkuCode yet. Ask your admin to invite you.`
   if (code === "disabled") return `Access for ${email ?? "this account"} is turned off. Ask your admin.`
   if (code === "google_not_set_up") return "Google sign-in isn't set up yet. An admin can set it up in Settings → Team."
+  if (code === "github_not_set_up") return "GitHub sign-in isn't set up yet. An admin can set it up in Settings → Team."
+  if (code === "github_failed")
+    return "GitHub sign-in didn't finish. Make sure your GitHub account has a verified email, then try again."
   return "Google sign-in didn't finish. Please try again."
 }

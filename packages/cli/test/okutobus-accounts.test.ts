@@ -13,8 +13,19 @@ function setup() {
   const store = new Store({ data: path.join(dir, "data"), config: path.join(dir, "config") })
   const sent: { to: string; subject: string; text: string }[] = []
   const google = { email: "new@okutobus.com", verified: true }
+  const github = {
+    emails: [
+      { email: "personal@gmail.com", primary: true, verified: true },
+      { email: "New@Okutobus.com", primary: false, verified: true },
+      { email: "unverified@okutobus.com", primary: false, verified: false },
+    ],
+  }
   const fetcher = (async (url: string | URL) => {
     const href = String(url)
+    if (href.includes("github") && href.includes("access_token")) return new Response(JSON.stringify({ access_token: "gh" }))
+    if (href.includes("github") && href.endsWith("/user/emails"))
+      return new Response(JSON.stringify(github.emails))
+    if (href.includes("github") && href.endsWith("/user")) return new Response(JSON.stringify({ login: "usman-dev", name: "Usman", avatar_url: "https://avatars/x.png" }))
     if (href.includes("token")) return new Response(JSON.stringify({ access_token: "tok" }))
     if (href.includes("userinfo"))
       return new Response(JSON.stringify({ email: google.email, email_verified: google.verified, name: "New Person" }))
@@ -55,7 +66,7 @@ function setup() {
     keep(response.cookies)
     return { ...response, data: response.body ? JSON.parse(response.body.startsWith("<") ? "{}" : response.body) : undefined }
   }
-  return { store, accounts, call, request, cookies, sent, google }
+  return { store, accounts, call, request, cookies, sent, google, github }
 }
 
 async function googleSignIn(t: ReturnType<typeof setup>) {
@@ -292,6 +303,46 @@ describe("OkuCode accounts", () => {
     } finally {
       delete process.env.OKUCODE_USAGE_DIR
     }
+  })
+
+  test("GitHub sign-in: a verified GitHub email an admin added can sign in (FR-56)", async () => {
+    const t = setup()
+    const signIn = async () => {
+      const start = await t.call("GET", "/okucode/auth/github")
+      expect(start.status).toBe(302)
+      const location = new URL(start.headers!.location!)
+      expect(location.origin + location.pathname).toBe("https://github.com/login/oauth/authorize")
+      expect(location.searchParams.get("redirect_uri")).toBe("http://localhost:4096/okucode/auth/github/callback")
+      return t.call("GET", `/okucode/auth/github/callback?code=abc&state=${location.searchParams.get("state")}`)
+    }
+    expect((await t.call("GET", "/okucode/auth/github")).headers!.location).toBe("/?okucode_error=github_not_set_up")
+    t.store.saveSettings({ github: { clientId: "gh-id", clientSecret: "gh-secret" } })
+    expect((await t.call("GET", "/okucode/auth/config")).data).toMatchObject({ github: true, google: false })
+
+    // Not added yet: refused with the primary email.
+    expect((await signIn()).headers!.location).toBe("/?okucode_error=not_invited&email=personal%40gmail.com")
+
+    // Added under the work email (a verified, non-primary GitHub email): signed in.
+    await t.call("POST", "/okucode/auth/password", { body: { password: PASSWORD } })
+    await t.call("POST", "/okucode/api/users", { body: { email: "new@okutobus.com", role: "member" } })
+    const ok = await signIn()
+    expect(ok.headers!.location).toBe("/")
+    expect(t.store.get("new@okutobus.com")).toMatchObject({ status: "active", name: "Usman", picture: "https://avatars/x.png" })
+    expect((await t.call("GET", "/okucode/me")).data).toMatchObject({ email: "new@okutobus.com", role: "member" })
+
+    // An unverified email never counts.
+    t.github.emails = [{ email: "unverified@okutobus.com", primary: true, verified: false }]
+    expect((await signIn()).headers!.location).toBe("/?okucode_error=github_failed")
+  })
+
+  test("admins save GitHub sign-in settings without losing Google's", async () => {
+    const t = setup()
+    t.store.saveSettings({ google: { clientId: "g", clientSecret: "gs" } })
+    await t.call("POST", "/okucode/auth/password", { body: { password: PASSWORD } })
+    await t.call("PUT", "/okucode/api/settings", { body: { googleClientId: "g", githubClientId: "gh", githubClientSecret: "ghs" } })
+    expect(t.store.settings()).toMatchObject({ google: { clientId: "g", clientSecret: "gs" }, github: { clientId: "gh", clientSecret: "ghs" } })
+    const view = (await t.call("GET", "/okucode/api/settings")).data
+    expect(view).toMatchObject({ githubClientId: "gh", githubSecretSaved: true, githubReady: true, githubCallbackUrl: "http://localhost:4096/okucode/auth/github/callback" })
   })
 
   test("email message is valid MIME", () => {
