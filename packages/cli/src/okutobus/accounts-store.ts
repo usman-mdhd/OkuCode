@@ -48,6 +48,9 @@ export type Settings = {
   /** FR-60: false turns the audit log off; days to keep it (0 keeps everything). Read by core's OkuAudit. */
   audit?: boolean
   auditRetentionDays?: number
+  /** FR-58: false stops usage metering; price per million tokens for the "equivalent API cost". */
+  usage?: boolean
+  usagePrice?: { input?: number; output?: number; cacheRead?: number }
 }
 
 type File = { secret: string; users: User[] }
@@ -79,11 +82,25 @@ export class Store {
   readonly usersFile: string
   readonly settingsFile: string
   readonly teamRulesFile: string
+  /** FR-58: who sent each chat (session ID → email), so usage can be shown per person. */
+  readonly sessionsFile: string
 
   constructor(dirs: { data: string; config: string }) {
     this.usersFile = path.join(dirs.data, "okucode", "users.json")
     this.settingsFile = path.join(dirs.config, "okucode.json")
     this.teamRulesFile = path.join(dirs.config, "OKUCODE-TEAM.md")
+    this.sessionsFile = path.join(dirs.data, "okucode", "sessions.json")
+  }
+
+  sessionUsers(): Record<string, string> {
+    return readJson<Record<string, string>>(this.sessionsFile) ?? {}
+  }
+
+  noteSession(sessionID: string, email: string) {
+    const users = this.sessionUsers()
+    if (users[sessionID] === email) return
+    users[sessionID] = email
+    writePrivate(this.sessionsFile, users)
   }
 
   private load(): File {

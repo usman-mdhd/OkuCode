@@ -268,6 +268,32 @@ describe("OkuCode accounts", () => {
     }
   })
 
+  test("usage per person: prompts by signed-in people are counted for them (FR-58)", async () => {
+    const t = setup()
+    const usageDir = mkdtempSync(path.join(tmpdir(), "oku-usage-api-"))
+    process.env.OKUCODE_USAGE_DIR = usageDir
+    try {
+      const { UsageLog } = await import("@opencode/util/usage-log")
+      const now = new Date().toISOString()
+      const base = { time: now, provider: "ollama", model: "qwen", input: 100, output: 50, reasoning: 0, cacheRead: 0, cacheWrite: 0, cost: 0, ms: 60_000 }
+      UsageLog.record({ ...base, sessionID: "ses_1" }, usageDir)
+      UsageLog.record({ ...base, sessionID: "ses_2" }, usageDir)
+
+      await t.call("POST", "/okucode/auth/password", { body: { password: PASSWORD } })
+      await t.call("POST", "/okucode/api/users", { body: { email: "new@okutobus.com", role: "lead" } })
+      t.store.saveSettings({ ...t.store.settings(), google: { clientId: "id", clientSecret: "secret" } })
+      await googleSignIn(t)
+      // The lead sends a message in ses_1: that chat is now counted for them.
+      expect(t.accounts.gate(t.request("POST", "/api/session/ses_1/prompt"))).toBeUndefined()
+      const usage = await t.call("GET", "/okucode/api/usage?days=7")
+      expect(usage.status).toBe(200)
+      expect(usage.data.total).toMatchObject({ calls: 2, input: 200, output: 100 })
+      expect(usage.data.byUser.map((row: { user: string }) => row.user).sort()).toEqual(["new@okutobus.com", "owner"])
+    } finally {
+      delete process.env.OKUCODE_USAGE_DIR
+    }
+  })
+
   test("email message is valid MIME", () => {
     const body = message({
       host: "", port: 0, user: "", pass: "", from: "a@b.com", fromName: "OkuCode", to: "c@d.com",

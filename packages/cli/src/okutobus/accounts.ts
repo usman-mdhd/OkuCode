@@ -14,6 +14,7 @@ import { send } from "./smtp"
 import { readFileSync, statSync } from "node:fs"
 import nodePath from "node:path"
 import { AuditChain } from "@opencode/util/audit-chain"
+import { UsageLog } from "@opencode/util/usage-log"
 
 export type Request = {
   method: string
@@ -349,6 +350,24 @@ export function createAccounts(input: {
       }
     }
 
+    // FR-58: usage per person, model and day (admins and team leads).
+    if (path === "/okucode/api/usage" && request.method === "GET") {
+      const days = Math.min(Math.max(Number(request.url.searchParams.get("days")) || 30, 1), 366)
+      const from = new Date(Date.now() - days * 86_400_000).toISOString()
+      const configured = settings().usagePrice ?? {}
+      const price = {
+        input: typeof configured.input === "number" ? configured.input : UsageLog.DEFAULT_PRICE.input,
+        output: typeof configured.output === "number" ? configured.output : UsageLog.DEFAULT_PRICE.output,
+        cacheRead: typeof configured.cacheRead === "number" ? configured.cacheRead : UsageLog.DEFAULT_PRICE.cacheRead,
+      }
+      return json(200, {
+        days,
+        price,
+        enabled: settings().usage !== false,
+        ...UsageLog.summarize(UsageLog.read(from), store.sessionUsers(), price),
+      })
+    }
+
     if (path === "/okucode/api/settings" && request.method === "GET") {
       if (!isAdmin) return adminOnly()
       const value = settings()
@@ -571,6 +590,16 @@ export function createAccounts(input: {
      */
     gate(request: Request): Response | undefined {
       const path = request.url.pathname
+      // FR-58: remember who sends each chat, for usage per person.
+      const prompt = request.method === "POST" ? path.match(/^\/api\/session\/([^/]+)\/prompt$/) : null
+      if (prompt) {
+        const user = cookieUser(request)
+        if (user) {
+          try {
+            store.noteSession(decodeURIComponent(prompt[1]!), user.email)
+          } catch {}
+        }
+      }
       // Only the API is checked; the page itself loads and then shows the sign-in screen.
       if (!(path === "/api" || path.startsWith("/api/") || path.startsWith("/auth/") || path === "/openapi.json")) return undefined
       const session = request.cookies[ServerAuth.sessionCookieName(request.headers.host)]

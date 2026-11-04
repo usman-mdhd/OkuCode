@@ -4,6 +4,7 @@
 //   Policy  approval mode, auto-test, model routing and team rules for every chat
 //   Sign-in Google sign-in and Gmail invite setup (admins only)
 //   Audit   FR-60 audit log: chain check, days kept, download (admins only)
+//   Usage   FR-58 tokens, GPU hours and cost per person and model (admins and team leads)
 import { Button } from "@opencode/ui/button"
 import { Select } from "@opencode/ui/select"
 import { Switch } from "@opencode/ui/switch"
@@ -52,6 +53,22 @@ type Audit = {
   check: { ok: boolean; entries: number; files: number; first?: string; last?: string; problem?: { file: string; line: number; reason: string } }
   days: { date: string; bytes: number }[]
 }
+
+type Totals = { calls: number; input: number; output: number; cached: number; cost: number; gpuHours: number; equivalent: number }
+type Usage = {
+  days: number
+  enabled: boolean
+  price: { input: number; output: number; cacheRead: number }
+  total: Totals
+  byUser: { user: string; totals: Totals }[]
+  byModel: { model: string; totals: Totals }[]
+  byDay: { day: string; totals: Totals }[]
+}
+
+const count = (value: number) =>
+  value >= 1_000_000 ? `${(value / 1_000_000).toFixed(1)}M` : value >= 1000 ? `${(value / 1000).toFixed(1)}k` : String(value)
+const usd = (value: number) => `$${value < 10 ? value.toFixed(2) : Math.round(value).toLocaleString()}`
+const hours = (value: number) => (value < 1 ? `${Math.round(value * 60)} min` : `${value.toFixed(1)} h`)
 
 const size = (bytes: number) => (bytes < 1024 ? `${bytes} B` : bytes < 1048576 ? `${(bytes / 1024).toFixed(1)} KB` : `${(bytes / 1048576).toFixed(1)} MB`)
 
@@ -217,6 +234,13 @@ export const SettingsTeam: Component<{ me: Me }> = (props) => {
       failed(error)
     }
   }
+
+  // ---- usage (FR-58) ----
+  const [usageDays, setUsageDays] = createSignal(30)
+  const [usage] = createResource(
+    () => ({ http: server(), days: usageDays() }),
+    (input) => call<Usage>(input.http, `/okucode/api/usage?days=${input.days}`),
+  )
 
   // ---- sign-in setup ----
   const [form, setForm] = createSignal<Record<string, string>>({})
@@ -439,6 +463,86 @@ export const SettingsTeam: Component<{ me: Me }> = (props) => {
             )}
           </Show>
         </Section>
+
+        {/* ---------- Usage (admins and team leads) ---------- */}
+        <Show when={usage()}>
+          {(current) => (
+            <Section
+              title="Usage"
+              description={`Tokens, GPU time and cost for the last ${current().days} days. "Same on an API" is what these tokens would cost on a paid API ($${current().price.input} in / $${current().price.output} out per million tokens).`}
+            >
+              <div class="mb-3 flex flex-wrap gap-2" data-action="okucode-usage-days">
+                <For each={[7, 30, 90]}>
+                  {(days) => (
+                    <Button size="small" variant={usageDays() === days ? "contrast" : "ghost"} onClick={() => setUsageDays(days)}>
+                      {days} days
+                    </Button>
+                  )}
+                </For>
+              </div>
+              <div class="mb-4 grid grid-cols-2 gap-2 sm:grid-cols-4" data-action="okucode-usage-total">
+                <For
+                  each={[
+                    { label: "Tokens", value: count(current().total.input + current().total.output) },
+                    { label: "GPU time", value: hours(current().total.gpuHours) },
+                    { label: "API cost", value: usd(current().total.cost) },
+                    { label: "Same on an API", value: usd(current().total.equivalent) },
+                  ]}
+                >
+                  {(item) => (
+                    <div class="rounded-md border border-v2-border-border-muted p-3">
+                      <div class="text-11-regular text-v2-text-text-muted">{item.label}</div>
+                      <div class="text-16-medium text-v2-text-text-base">{item.value}</div>
+                    </div>
+                  )}
+                </For>
+              </div>
+              <For
+                each={[
+                  { title: "By person", rows: current().byUser.map((row) => ({ name: row.user, totals: row.totals })) },
+                  { title: "By model", rows: current().byModel.map((row) => ({ name: row.model, totals: row.totals })) },
+                ]}
+              >
+                {(table) => (
+                  <div class="mb-4">
+                    <span class="text-12-medium text-v2-text-text-base">{table.title}</span>
+                    <Show
+                      when={table.rows.length > 0}
+                      fallback={<div class="text-12-regular text-v2-text-text-muted">No chats in this period yet.</div>}
+                    >
+                      <table class="mt-1 w-full text-12-regular">
+                        <thead class="text-v2-text-text-muted">
+                          <tr>
+                            <th class="py-1 text-left font-normal">{table.title === "By person" ? "Person" : "Model"}</th>
+                            <th class="py-1 text-right font-normal">Calls</th>
+                            <th class="py-1 text-right font-normal">Tokens in</th>
+                            <th class="py-1 text-right font-normal">Tokens out</th>
+                            <th class="py-1 text-right font-normal">GPU time</th>
+                            <th class="py-1 text-right font-normal">Same on an API</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          <For each={table.rows}>
+                            {(row) => (
+                              <tr class="border-t border-v2-border-border-muted text-v2-text-text-base">
+                                <td class="max-w-0 truncate py-1.5">{row.name}</td>
+                                <td class="py-1.5 text-right">{row.totals.calls}</td>
+                                <td class="py-1.5 text-right">{count(row.totals.input)}</td>
+                                <td class="py-1.5 text-right">{count(row.totals.output)}</td>
+                                <td class="py-1.5 text-right">{hours(row.totals.gpuHours)}</td>
+                                <td class="py-1.5 text-right">{usd(row.totals.equivalent)}</td>
+                              </tr>
+                            )}
+                          </For>
+                        </tbody>
+                      </table>
+                    </Show>
+                  </div>
+                )}
+              </For>
+            </Section>
+          )}
+        </Show>
 
         {/* ---------- Sign-in setup (admins) ---------- */}
         <Show when={isAdmin() && setup()}>

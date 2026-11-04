@@ -28,6 +28,7 @@ import { SessionUsage } from "../usage.js"
 import { SessionRunnerModel } from "./model.js"
 import { createLLMEventPublisher } from "./publish-llm-event.js"
 import { TextToolCalls } from "../../okutobus/text-tool-calls.js"
+import { OkuUsage } from "../../okutobus/usage.js"
 import { SessionRunnerRetry } from "./retry.js"
 
 export type Outcome = Data.TaggedEnum<{
@@ -153,7 +154,9 @@ export const make = Effect.gen(function* () {
     // Keep the final tool and Step events uninterruptible, even when the work itself is cancelled.
     return yield* Effect.uninterruptibleMask((restore) =>
       Effect.gen(function* () {
+        const modelStarted = Date.now()
         const stream = yield* restore(providerStream).pipe(Effect.exit)
+        const modelMs = Date.now() - modelStarted
         const streamFailure = Option.getOrUndefined(Exit.findErrorOption(stream))
         const streamInterrupted = Exit.hasInterrupts(stream)
         // Cancelled before the start snapshot existed: record nothing, as when the capture preceded the request.
@@ -260,6 +263,16 @@ export const make = Effect.gen(function* () {
             ? { cost: SessionUsage.calculateCost(input.model.cost, record.finish.tokens), tokens: record.finish.tokens }
             : undefined
           if (record.failure) yield* publisher.publishStepFailure({ ...usage, snapshot, files })
+          // Okutobus (OkuCode) FR-58: usage metering per model call.
+          if (usage)
+            OkuUsage.record({
+              sessionID: input.sessionID,
+              provider: String(input.model.ref.providerID),
+              model: String(input.model.ref.id),
+              tokens: usage.tokens,
+              cost: Number(usage.cost),
+              ms: modelMs,
+            })
           if (record.finish && usage && !record.failure)
             yield* bus.publish(SessionEvent.Step.Ended, {
               sessionID: input.sessionID,
