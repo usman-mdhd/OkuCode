@@ -68,7 +68,8 @@ type Usage = {
 const count = (value: number) =>
   value >= 1_000_000 ? `${(value / 1_000_000).toFixed(1)}M` : value >= 1000 ? `${(value / 1000).toFixed(1)}k` : String(value)
 const usd = (value: number) => `$${value < 10 ? value.toFixed(2) : Math.round(value).toLocaleString()}`
-const hours = (value: number) => (value < 1 ? `${Math.round(value * 60)} min` : `${value.toFixed(1)} h`)
+const hours = (value: number) =>
+  value * 60 < 1 ? `${Math.round(value * 3600)} s` : value < 1 ? `${Math.round(value * 60)} min` : `${value.toFixed(1)} h`
 
 const size = (bytes: number) => (bytes < 1024 ? `${bytes} B` : bytes < 1048576 ? `${(bytes / 1024).toFixed(1)} KB` : `${(bytes / 1048576).toFixed(1)} MB`)
 
@@ -513,7 +514,7 @@ export const SettingsTeam: Component<{ me: Me }> = (props) => {
                       <table class="mt-1 w-full text-12-regular">
                         <thead class="text-v2-text-text-muted">
                           <tr>
-                            <th class="py-1 text-left font-normal">{table.title === "By person" ? "Person" : "Model"}</th>
+                            <th class="w-2/5 py-1 text-left font-normal">{table.title === "By person" ? "Person" : "Model"}</th>
                             <th class="py-1 text-right font-normal">Calls</th>
                             <th class="py-1 text-right font-normal">Tokens in</th>
                             <th class="py-1 text-right font-normal">Tokens out</th>
@@ -525,7 +526,9 @@ export const SettingsTeam: Component<{ me: Me }> = (props) => {
                           <For each={table.rows}>
                             {(row) => (
                               <tr class="border-t border-v2-border-border-muted text-v2-text-text-base">
-                                <td class="max-w-0 truncate py-1.5">{row.name}</td>
+                                <td class="max-w-0 truncate py-1.5" title={row.name}>
+                                  {row.name.replace(/^ollama\//, "")}
+                                </td>
                                 <td class="py-1.5 text-right">{row.totals.calls}</td>
                                 <td class="py-1.5 text-right">{count(row.totals.input)}</td>
                                 <td class="py-1.5 text-right">{count(row.totals.output)}</td>
