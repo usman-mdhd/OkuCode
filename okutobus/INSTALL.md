@@ -38,6 +38,12 @@ Then open a new terminal and run `okucode web`.
 okucode update
 ```
 
+## Docker sandbox (optional)
+
+In Full-auto mode OkuCode runs the agent's commands in a sandbox. To use Docker instead of the computer's own
+sandbox, start Docker Desktop, run `okucode sandbox-image` once, then choose **Docker** in Settings → Team →
+Sandbox for Full-auto. Add the tools your team needs to `okutobus/sandbox/Dockerfile` and run the command again.
+
 ## Where things are
 
 - OkuCode: `~/.okucode/app` · its Bun: `~/.okucode/bun` · install log: `~/.okucode/install.log`

@@ -48,7 +48,7 @@ export function apply(
   selected: Mode | undefined,
   explicitAllow: boolean,
   // FR-24: Full-auto runs commands without asking only inside the sandbox (or when the sandbox is turned off).
-  sandboxed: () => boolean = () => OkuSandbox.setting() === "off" || OkuSandbox.available(),
+  sandboxed: () => boolean = () => OkuSandbox.setting() === "off" || OkuSandbox.ready(),
 ) {
   if (!selected) return current
   const edit = EDIT.has(action)

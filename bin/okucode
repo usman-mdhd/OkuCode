@@ -6,6 +6,7 @@
 #   okucode web [--port N]  web UI + API on this laptop (http://127.0.0.1:4096 by default)
 #   okucode serve           API server only (see `okucode serve --help`)
 #   okucode update          update OkuCode (installed with okutobus/install.sh)
+#   okucode sandbox-image   build the Docker sandbox image (FR-25)
 set -e
 SELF="$0"
 while [ -L "$SELF" ]; do
@@ -18,6 +19,16 @@ APP="$ROOT/packages/app"
 PRELOAD="$CLI/node_modules/@opentui/solid/scripts/preload.js"
 # The installer (okutobus/install.sh) puts the Bun version OkuCode needs in ~/.okucode/bun.
 if [ -x "$HOME/.okucode/bun/bin/bun" ]; then PATH="$HOME/.okucode/bun/bin:$PATH"; export PATH; fi
+
+# okucode sandbox-image: build the Docker image for the Docker sandbox (FR-25; "sandbox": "docker" in okucode.json).
+if [ "$1" = "sandbox-image" ]; then
+  command -v docker >/dev/null 2>&1 || { echo "okucode: Docker is not installed. Get Docker Desktop: https://www.docker.com/products/docker-desktop/" >&2; exit 1; }
+  docker info >/dev/null 2>&1 || { echo "okucode: Docker is not running. Start Docker Desktop and try again." >&2; exit 1; }
+  IMAGE="${2:-okucode-sandbox}"
+  echo "okucode: building the sandbox image $IMAGE (a few minutes the first time)..."
+  docker build -t "$IMAGE" "$ROOT/okutobus/sandbox" && echo "okucode: done. Choose Docker in Settings → Team → Sandbox for Full-auto."
+  exit $?
+fi
 
 # okucode update: get the latest version (or, for your own clone, reinstall its packages and rebuild).
 if [ "$1" = "update" ]; then

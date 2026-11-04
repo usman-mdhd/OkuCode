@@ -215,7 +215,13 @@ describe("OkuCode accounts", () => {
     // The policy applies to every chat: approval mode, auto-test, routing and team rules.
     expect((await t.call("GET", "/okucode/api/policy")).data).toEqual({
       approvalMode: null, autoTest: true, routing: false, smallModel: "ollama/qwen2.5-coder:3b", teamRules: "",
+      sandbox: "auto", sandboxImage: "okucode-sandbox", dockerReady: expect.any(Boolean),
     })
+    // FR-25: the sandbox for Full-auto (this computer's, Docker or off).
+    expect((await t.call("PUT", "/okucode/api/policy", { body: { sandbox: "box" } })).status).toBe(400)
+    expect((await t.call("PUT", "/okucode/api/policy", { body: { sandbox: "docker" } })).status).toBe(200)
+    expect(t.store.settings().sandbox).toBe("docker")
+    await t.call("PUT", "/okucode/api/policy", { body: { sandbox: "auto" } })
     expect((await t.call("PUT", "/okucode/api/policy", { body: { approvalMode: "yolo" } })).status).toBe(400)
     const saved = await t.call("PUT", "/okucode/api/policy", {
       body: { approvalMode: "auto-edit", autoTest: false, routing: false, teamRules: "- Never commit to main.\r\n" },
@@ -339,7 +345,7 @@ describe("OkuCode accounts", () => {
     expect(t.store.keys()[0]!.lastUsed).toBeNumber()
     expect(t.accounts.apiKeyAuth(t.request("GET", "/api/session"))).toBeUndefined()
     const wrong = t.accounts.apiKeyAuth(bearer("GET", "/api/session", "oku_" + "x".repeat(32)))
-    expect((wrong as Response).status).toBe(401)
+    expect((wrong as { status: number }).status).toBe(401)
 
     // A lead sees and makes keys for themselves and members, not for admins.
     await googleSignIn(t)
@@ -354,11 +360,11 @@ describe("OkuCode accounts", () => {
 
     // Disabling the person stops their key; removing the key stops it for good.
     await t.call("PATCH", "/okucode/api/users/dev%40okutobus.com", { body: { disabled: true } })
-    expect((t.accounts.apiKeyAuth(bearer("GET", "/api/session", secret)) as Response).status).toBe(401)
+    expect((t.accounts.apiKeyAuth(bearer("GET", "/api/session", secret)) as { status: number }).status).toBe(401)
     await t.call("PATCH", "/okucode/api/users/dev%40okutobus.com", { body: { disabled: false } })
     expect(t.accounts.apiKeyAuth(bearer("GET", "/api/session", secret))).toMatchObject({ email: "dev@okutobus.com" })
     expect((await t.call("DELETE", `/okucode/api/keys/${made.data.key.id}`)).status).toBe(200)
-    expect((t.accounts.apiKeyAuth(bearer("GET", "/api/session", secret)) as Response).status).toBe(401)
+    expect((t.accounts.apiKeyAuth(bearer("GET", "/api/session", secret)) as { status: number }).status).toBe(401)
   })
 
   test("GitHub sign-in: a verified GitHub email an admin added can sign in (FR-56)", async () => {

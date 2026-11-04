@@ -289,10 +289,13 @@ const layer = () =>
         // Okutobus (OkuCode) FR-24: the agent's commands run in the OS sandbox when it is active (Full-auto by default).
         const sandbox =
           Schema.is(SessionSchema.ID)(sessionID)
-            ? OkuSandbox.wrap(invocation.shell, ShellSelect.args(invocation.shell, invocation.command), [
-                location.directory,
-                invocation.cwd,
-              ])
+            ? OkuSandbox.wrap(
+                invocation.shell,
+                ShellSelect.args(invocation.shell, invocation.command),
+                [location.directory, invocation.cwd],
+                undefined,
+                invocation.command,
+              )
             : undefined
         if (sandbox?.sandboxed) invocation.env.OKUCODE_SANDBOX = "1"
         const args = sandbox?.args ?? ShellSelect.args(invocation.shell, invocation.command)

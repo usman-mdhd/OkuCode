@@ -48,9 +48,12 @@ export type Settings = {
   disabledSkills?: string[]
   /** FR-18: false turns off the repository map in the system prompt (read by core's OkuRepoMap). */
   repoMap?: boolean
-  /** FR-24: "auto" (sandbox in Full-auto), "on" or "off"; sandboxNetwork false also blocks the network (read by core's OkuSandbox). */
+  /** FR-24/25: "auto" (OS sandbox in Full-auto), "on", "off" or "docker"; sandboxNetwork false also blocks the network
+   * (read by core's OkuSandbox). */
   sandbox?: string
   sandboxNetwork?: boolean
+  /** FR-25: the Docker image for "docker" (default okucode-sandbox). */
+  sandboxImage?: string
   /** FR-60: false turns the audit log off; days to keep it (0 keeps everything). Read by core's OkuAudit. */
   audit?: boolean
   auditRetentionDays?: number

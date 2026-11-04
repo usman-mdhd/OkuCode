@@ -33,7 +33,16 @@ type Policy = {
   routing: boolean
   smallModel: string | null
   teamRules: string
+  sandbox: "auto" | "docker" | "on" | "off"
+  sandboxImage: string
+  dockerReady: boolean
 }
+
+const SANDBOX_OPTIONS: { value: Policy["sandbox"]; label: string }[] = [
+  { value: "auto", label: "This computer's sandbox" },
+  { value: "docker", label: "Docker" },
+  { value: "off", label: "Off" },
+]
 type Setup = {
   publicUrl: string
   suggestedUrl: string
@@ -477,6 +486,32 @@ export const SettingsTeam: Component<{ me: Me }> = (props) => {
                         option &&
                         option.value !== current().approvalMode &&
                         void savePolicy({ approvalMode: option.value }, `Approval mode: ${option.label}`)
+                      }
+                    />
+                  </SettingsRow>
+                  <SettingsRow
+                    title="Sandbox for Full-auto"
+                    description={
+                      current().sandbox === "docker"
+                        ? current().dockerReady
+                          ? `Commands run in a Docker container (${current().sandboxImage}) that sees only the project folder.`
+                          : `Docker or the image ${current().sandboxImage} is missing, so Full-auto asks before commands. Start Docker and run: okucode sandbox-image`
+                        : current().sandbox === "off"
+                          ? "No sandbox: in Full-auto, commands run directly on the computer without asking."
+                          : "Commands may change only the project, temp folders and package caches (macOS Seatbelt / Linux bubblewrap)."
+                    }
+                  >
+                    <Select
+                      data-action="okucode-team-sandbox"
+                      options={SANDBOX_OPTIONS}
+                      current={SANDBOX_OPTIONS.find((option) => option.value === (current().sandbox === "on" ? "auto" : current().sandbox))}
+                      value={(option) => option.value}
+                      label={(option) => option.label}
+                      placement="bottom-end"
+                      onSelect={(option) =>
+                        option &&
+                        option.value !== current().sandbox &&
+                        void savePolicy({ sandbox: option.value }, `Sandbox: ${option.label}`)
                       }
                     />
                   </SettingsRow>

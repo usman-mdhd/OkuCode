@@ -12,6 +12,7 @@ import { ADMIN_PAGE } from "./admin-page"
 import { activeAdmins, isRole, normalize, validEmail, type ApiKey, type Role, type Settings, type Store, type User } from "./accounts-store"
 import { send } from "./smtp"
 import { readFileSync, statSync } from "node:fs"
+import { spawnSync } from "node:child_process"
 import nodePath from "node:path"
 import { AuditChain } from "@opencode/util/audit-chain"
 import { UsageLog } from "@opencode/util/usage-log"
@@ -122,6 +123,17 @@ export function createAccounts(input: {
   }
 
   // ---- API keys (FR-56) ----
+
+  // FR-25: the Docker sandbox needs Docker running and the image built (okucode sandbox-image).
+  type Sandbox = "auto" | "docker" | "on" | "off"
+  const SANDBOXES: Sandbox[] = ["auto", "docker", "on", "off"]
+  const dockerReady = (image: string) => {
+    try {
+      return spawnSync("docker", ["image", "inspect", "--format", "{{.Id}}", image], { timeout: 5_000 }).status === 0
+    } catch {
+      return false
+    }
+  }
 
   const KEY = /^Bearer\s+(oku_[A-Za-z0-9_-]{20,})$/i
   const keyHash = (key: string) => createHash("sha256").update(key).digest("hex")
@@ -512,6 +524,9 @@ export function createAccounts(input: {
         routing: value.routing === true,
         smallModel: value.smallModel ?? null,
         teamRules: store.teamRules(),
+        sandbox: SANDBOXES.includes(value.sandbox as Sandbox) ? value.sandbox : "auto",
+        sandboxImage: value.sandboxImage || "okucode-sandbox",
+        dockerReady: dockerReady(value.sandboxImage || "okucode-sandbox"),
       })
     }
 
@@ -681,7 +696,7 @@ export function createAccounts(input: {
     }
 
     if (path === "/okucode/api/policy" && request.method === "PUT") {
-      const next = await body<{ approvalMode?: string; autoTest?: boolean; routing?: boolean; teamRules?: string }>(request)
+      const next = await body<{ approvalMode?: string; autoTest?: boolean; routing?: boolean; teamRules?: string; sandbox?: string }>(request)
       const value = settings()
       if (next.approvalMode !== undefined) {
         if (next.approvalMode !== "ask" && next.approvalMode !== "auto-edit" && next.approvalMode !== "full-auto")
@@ -690,6 +705,10 @@ export function createAccounts(input: {
       }
       if (typeof next.autoTest === "boolean") value.autoTest = next.autoTest
       if (typeof next.routing === "boolean") value.routing = next.routing
+      if (next.sandbox !== undefined) {
+        if (!SANDBOXES.includes(next.sandbox as Sandbox)) return json(400, { error: "Sandbox must be auto, docker, on or off." })
+        value.sandbox = next.sandbox
+      }
       if (typeof next.teamRules === "string") {
         if (next.teamRules.length > 20000) return json(400, { error: "Team rules are too long (20,000 characters at most)." })
         store.saveTeamRules(next.teamRules)
