@@ -463,6 +463,28 @@ function SettingsKeybindsView(props: {
       </div>
       <div class="settings-tab-body">
         <div class="settings-shortcuts settings-section-stack">
+          {/* Okutobus (OkuCode): these were in the message box's + menu; they work by typing them. */}
+          <Show when={!store.filter}>
+            <div class="settings-section" data-action="okucode-message-box-keys">
+              <h3 class="settings-section-title">In the message box</h3>
+              <SettingsList>
+                <For
+                  each={[
+                    { key: "/", label: "Commands (type / at the start of a message)" },
+                    { key: "@", label: "Add a file, folder, skill or agent to the message" },
+                    { key: "!", label: "Run a shell command (type ! at the start)" },
+                  ]}
+                >
+                  {(item) => (
+                    <div class="flex items-center justify-between gap-4 py-3 border-b border-border-weak-base last:border-none">
+                      <span>{item.label}</span>
+                      <kbd class="rounded border border-border-weak-base px-2 py-0.5 font-mono text-12-regular">{item.key}</kbd>
+                    </div>
+                  )}
+                </For>
+              </SettingsList>
+            </div>
+          </Show>
           <For each={props.groups}>
             {(group) => (
               <Show when={(filtered().get(group) ?? []).length > 0}>

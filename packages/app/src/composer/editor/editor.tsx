@@ -24,6 +24,7 @@ import { useI18n } from "@opencode/ui/context/i18n"
 import { Button } from "@opencode/ui/button"
 import { Keybind } from "@opencode/ui/keybind"
 import { Menu } from "@opencode/ui/menu"
+import { OkuAddMenuItems } from "@/okutobus/add-menu"
 import { Tooltip } from "@opencode/ui/tooltip"
 import { ScrollView } from "@opencode/ui/scroll-view"
 import { AttachmentCard } from "@opencode/session-ui/attachment-card"
@@ -329,6 +330,8 @@ export function ComposerEditor(props: ComposerEditorProps) {
               onCommands={props.controller.openCommands}
               onContext={props.controller.openContext}
               onShell={props.controller.openShell}
+              skills={props.controller.skillSuggestions}
+              onSkill={props.controller.addSuggestion}
             />
           </div>
           <div
@@ -765,6 +768,8 @@ export function ComposerEditorAddMenu(props: {
   onCommands: () => void
   onContext: () => void
   onShell: () => void
+  skills?: () => ComposerSuggestion[]
+  onSkill?: (item: ComposerSuggestion) => void
 }) {
   return (
     <Tooltip
@@ -790,21 +795,15 @@ export function ComposerEditorAddMenu(props: {
         <Menu.Portal>
           <Menu.Content
             class="[&_[data-slot=menu-v2-item-shortcut]]:w-5 [&_[data-slot=menu-v2-item-shortcut]]:justify-center"
-            style={{ "min-width": "180px" }}
+            style={{ "min-width": "200px" }}
           >
-            <Menu.Item onSelect={props.onAttach} shortcut={props.attachShortcut}>
-              {props.attachLabel}
-            </Menu.Item>
-            <Menu.Separator />
-            <Menu.Item onSelect={props.onCommands} shortcut="/">
-              {props.commandsLabel}
-            </Menu.Item>
-            <Menu.Item onSelect={props.onContext} shortcut="@">
-              {props.contextLabel}
-            </Menu.Item>
-            <Menu.Item onSelect={props.onShell} shortcut="!">
-              {props.shellLabel}
-            </Menu.Item>
+            {/* Okutobus (OkuCode): Add files or photos, Skills, Plugins. /, @ and ! still work by typing them. */}
+            <OkuAddMenuItems
+              attachShortcut={props.attachShortcut}
+              skills={props.skills?.() ?? []}
+              onAttach={props.onAttach}
+              onSkill={(item) => props.onSkill?.(item)}
+            />
           </Menu.Content>
         </Menu.Portal>
       </Menu>

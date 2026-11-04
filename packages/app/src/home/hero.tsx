@@ -1,9 +1,11 @@
 // Okutobus (OkuCode): simple start screen — a greeting, one message box and suggestion chips.
 // Typing here and pressing Enter opens a new chat in the chosen project and sends the message.
-import { createMemo, createResource, createSignal, For, onCleanup, Show } from "solid-js"
+import { createEffect, createMemo, createResource, createSignal, For, onCleanup, Show, untrack } from "solid-js"
+import { useNavigate } from "@solidjs/router"
+import { createMediaQuery } from "@solid-primitives/media"
 import { Mark } from "@opencode/ui/logo"
 import { ServerConnection } from "@/runtime/server/registry"
-import { useTabs } from "@/shell/tabs/tabs"
+import { draftHref, useTabs } from "@/shell/tabs/tabs"
 import type { HomeController } from "./model"
 import type { createHomeProjectsController } from "./projects/controller"
 
@@ -89,6 +91,26 @@ export function HomeHero(props: { home: HomeController; projects: HomeProjectsCo
     input.style.height = "auto"
     input.style.height = `${Math.min(input.scrollHeight, 240)}px`
   }
+
+  // On computers the start screen is the real chat box (+ menu, agent, model), so open the new chat for the folder
+  // right away, reusing an unsent one for the same folder. Phones keep this simple screen with the chat list.
+  const navigate = useNavigate()
+  const mobile = createMediaQuery("(max-width: 767px)")
+  let opened = false
+  createEffect(() => {
+    if (opened || mobile() || !tabs.ready()) return
+    const conn = props.home.server.focused()
+    const dir = directory()
+    if (!conn || !dir) return
+    opened = true
+    untrack(() => {
+      const server = ServerConnection.key(conn)
+      props.home.server.context(conn).projects.open(dir)
+      const draft = tabs.store.find((tab) => tab.type === "draft" && tab.server === server && tab.directory === dir)
+      if (draft?.type === "draft") navigate(draftHref(draft.draftID), { replace: true })
+      else void tabs.newDraft({ server, directory: dir }, undefined, undefined, { replace: true })
+    })
+  })
 
   const send = async () => {
     const message = text().trim()

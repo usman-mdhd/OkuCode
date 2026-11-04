@@ -454,6 +454,13 @@ export function createComposerEditor(input: {
     openShell() {
       dispatch({ type: "mode.shell" })
     },
+    // Okutobus (OkuCode): the + menu lists the skills and adds the one picked to the message.
+    skillSuggestions() {
+      return input.context().filter((item) => item.kind === "skill")
+    },
+    addSuggestion(item: ComposerSuggestion) {
+      dispatch({ type: "popover.select", item })
+    },
     submit(options?: { alternate?: boolean }) {
       if (input.view.submit.available?.() === false) return
 
