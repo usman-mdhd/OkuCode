@@ -61,10 +61,13 @@ export function NewSessionView(props: {
           active={props.composer.state.drag === "active"}
           input={props.composer.model.selection.current()?.capabilities.input}
         />
-        <div class="absolute inset-x-0 top-[25.375%] flex justify-center px-6">
-          <div class={NEW_SESSION_CONTENT_WIDTH}>
+        {/* Okutobus (OkuCode): greeting in the middle, message box at the bottom like in a chat. */}
+        <div class="absolute inset-0 flex flex-col items-center px-6 pb-14">
+          <div class="flex min-h-0 flex-1 items-center justify-center">
             <OkuGreeting />
-            <div class="mt-8 flex flex-col gap-8">
+          </div>
+          <div class={NEW_SESSION_CONTENT_WIDTH}>
+            <div class="flex flex-col gap-3">
               <Composer model={props.composer} />
               <Show when={props.project.empty()}>
                 <PromptProjectAddButton controller={props.project} />
