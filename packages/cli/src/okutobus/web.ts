@@ -27,8 +27,18 @@ export function wrap(accounts: Accounts) {
         const handled = yield* Effect.promise(() => accounts.handle({ ...input, body: async () => text }))
         if (handled) return toResponse(handled)
       }
+      // FR-56: an API key stands in for the server password on this request.
+      const key = accounts.apiKeyAuth(input)
+      if (key && "status" in key) return toResponse(key)
       const blocked = accounts.gate(input)
       if (blocked) return toResponse(blocked)
+      if (key)
+        return yield* app.pipe(
+          Effect.provideService(
+            HttpServerRequest.HttpServerRequest,
+            request.modify({ headers: { ...request.headers, authorization: key.authorization } }),
+          ),
+        )
       return yield* app
     })
 }

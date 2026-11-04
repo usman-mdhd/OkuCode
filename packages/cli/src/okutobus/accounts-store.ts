@@ -61,6 +61,19 @@ export type Settings = {
 
 type File = { secret: string; users: User[] }
 
+/** FR-56: a personal API key. Only its SHA-256 hash is stored; the key itself is shown once when it is made. */
+export type ApiKey = {
+  id: string
+  name: string
+  email: string
+  /** The first characters of the key, to recognise it in the list. */
+  prefix: string
+  hash: string
+  createdAt: number
+  createdBy: string
+  lastUsed?: number
+}
+
 export const normalize = (email: string) => email.trim().toLowerCase()
 export const validEmail = (email: string) => /^[^\s@<>()",;]+@[^\s@<>()",;]+\.[^\s@<>()",;]+$/.test(email)
 
@@ -90,12 +103,22 @@ export class Store {
   readonly teamRulesFile: string
   /** FR-58: who sent each chat (session ID → email), so usage can be shown per person. */
   readonly sessionsFile: string
+  readonly keysFile: string
 
   constructor(dirs: { data: string; config: string }) {
     this.usersFile = path.join(dirs.data, "okucode", "users.json")
     this.settingsFile = path.join(dirs.config, "okucode.json")
     this.teamRulesFile = path.join(dirs.config, "OKUCODE-TEAM.md")
     this.sessionsFile = path.join(dirs.data, "okucode", "sessions.json")
+    this.keysFile = path.join(dirs.data, "okucode", "api-keys.json")
+  }
+
+  keys(): ApiKey[] {
+    return readJson<ApiKey[]>(this.keysFile) ?? []
+  }
+
+  saveKeys(keys: ApiKey[]) {
+    writePrivate(this.keysFile, keys)
   }
 
   sessionUsers(): Record<string, string> {

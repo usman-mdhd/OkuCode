@@ -5,10 +5,11 @@
 //   Sign-in Google sign-in and Gmail invite setup (admins only)
 //   Audit   FR-60 audit log: chain check, days kept, download (admins only)
 //   Usage   FR-58 tokens, GPU hours and cost per person and model (admins and team leads)
+//   API keys FR-56 personal keys for scripts and CI ("Authorization: Bearer oku_..."), shown once when made
 import { Button } from "@opencode/ui/button"
 import { Select } from "@opencode/ui/select"
 import { Switch } from "@opencode/ui/switch"
-import { createResource, createSignal, For, Show, type Component, type JSX } from "solid-js"
+import { createMemo, createResource, createSignal, For, Show, type Component, type JSX } from "solid-js"
 import { SettingsList } from "@/settings/list"
 import { SettingsRow } from "@/settings/row"
 import { showToast } from "@/shell/notifications/toast"
@@ -73,6 +74,9 @@ type Usage = {
   byModel: { model: string; totals: Totals }[]
   byDay: { day: string; totals: Totals }[]
 }
+
+type ApiKey = { id: string; name: string; email: string; prefix: string; createdAt: number; createdBy: string; lastUsed?: number }
+const when = (time?: number) => (time ? new Date(time).toLocaleString() : "never")
 
 const count = (value: number) =>
   value >= 1_000_000 ? `${(value / 1_000_000).toFixed(1)}M` : value >= 1000 ? `${(value / 1000).toFixed(1)}k` : String(value)
@@ -251,6 +255,51 @@ export const SettingsTeam: Component<{ me: Me }> = (props) => {
     () => ({ http: server(), days: usageDays() }),
     (input) => call<Usage>(input.http, `/okucode/api/usage?days=${input.days}`),
   )
+
+  // ---- API keys (FR-56) ----
+  const [keys, { refetch: reloadKeys }] = createResource(server, (http) =>
+    call<{ keys: ApiKey[] }>(http, "/okucode/api/keys").then((data) => data.keys),
+  )
+  const [keyName, setKeyName] = createSignal("")
+  const [keyFor, setKeyFor] = createSignal("me")
+  const [secret, setSecret] = createSignal<{ name: string; value: string }>()
+  const keyPeople = createMemo(() => [
+    { value: "me", label: "Me" },
+    ...(users() ?? [])
+      .filter((user) => user.email !== props.me.email && user.status !== "disabled" && (isAdmin() || user.role === "member"))
+      .map((user) => ({ value: user.email, label: user.email })),
+  ])
+  const makeKey = async (event: Event) => {
+    event.preventDefault()
+    try {
+      const result = await call<{ key: ApiKey; secret: string }>(server(), "/okucode/api/keys", "POST", {
+        name: keyName(),
+        ...(keyFor() !== "me" ? { email: keyFor() } : {}),
+      })
+      setKeyName("")
+      setSecret({ name: result.key.name, value: result.secret })
+      await reloadKeys()
+    } catch (error) {
+      failed(error)
+    }
+  }
+  const removeKey = async (key: ApiKey) => {
+    try {
+      await call(server(), `/okucode/api/keys/${encodeURIComponent(key.id)}`, "DELETE")
+      await reloadKeys()
+      done(`Removed key "${key.name}"`)
+    } catch (error) {
+      failed(error)
+    }
+  }
+  const copySecret = async () => {
+    try {
+      await navigator.clipboard.writeText(secret()?.value ?? "")
+      done("Key copied")
+    } catch (error) {
+      failed(error)
+    }
+  }
 
   // ---- sign-in setup ----
   const [form, setForm] = createSignal<Record<string, string>>({})
@@ -560,6 +609,84 @@ export const SettingsTeam: Component<{ me: Me }> = (props) => {
             </Section>
           )}
         </Show>
+
+        {/* ---------- API keys (admins and team leads) ---------- */}
+        <Section
+          title="API keys"
+          description='Keys let scripts and CI use OkuCode as a person, without signing in. Send the key as "Authorization: Bearer oku_...". A key is shown only once when you make it.'
+        >
+          <form class="mb-3 flex flex-wrap items-end gap-2" onSubmit={makeKey} data-action="okucode-key-create">
+            <div class="min-w-40 flex-1">
+              <Field label="Key name">
+                <input class={input} value={keyName()} placeholder="CI script" onInput={(event) => setKeyName(event.currentTarget.value)} />
+              </Field>
+            </div>
+            <div class="min-w-40">
+              <Field label="For">
+                <Select
+                  options={keyPeople()}
+                  current={keyPeople().find((item) => item.value === keyFor()) ?? keyPeople()[0]}
+                  value={(item) => item.value}
+                  label={(item) => item.label}
+                  onSelect={(item) => setKeyFor(item?.value ?? "me")}
+                />
+              </Field>
+            </div>
+            <div class="mb-3">
+              <Button type="submit" size="small" variant="contrast" disabled={!keyName().trim()}>
+                Make key
+              </Button>
+            </div>
+          </form>
+          <Show when={secret()}>
+            {(made) => (
+              <div class="mb-3 rounded-md border border-v2-border-border-muted bg-surface-warning-weak p-3" data-action="okucode-key-secret">
+                <div class="mb-1 text-12-medium text-v2-text-text-base">Copy the key "{made().name}" now. It won't be shown again.</div>
+                <code class="block break-all text-12-regular text-v2-text-text-base">{made().value}</code>
+                <div class="mt-2 flex gap-2">
+                  <Button size="small" variant="contrast" onClick={() => void copySecret()}>
+                    Copy
+                  </Button>
+                  <Button size="small" variant="ghost" onClick={() => setSecret(undefined)}>
+                    Done
+                  </Button>
+                </div>
+              </div>
+            )}
+          </Show>
+          <Show when={(keys() ?? []).length > 0} fallback={<div class="text-12-regular text-v2-text-text-muted">No API keys yet.</div>}>
+            <table class="w-full text-12-regular" data-action="okucode-key-list">
+              <thead class="text-v2-text-text-muted">
+                <tr>
+                  <th class="py-1 text-left font-normal">Name</th>
+                  <th class="py-1 text-left font-normal">Person</th>
+                  <th class="py-1 text-left font-normal">Key</th>
+                  <th class="py-1 text-left font-normal">Last used</th>
+                  <th class="py-1" />
+                </tr>
+              </thead>
+              <tbody>
+                <For each={keys()}>
+                  {(key) => (
+                    <tr class="border-t border-v2-border-border-muted text-v2-text-text-base">
+                      <td class="py-1.5">{key.name}</td>
+                      <td class="max-w-0 truncate py-1.5" title={key.email}>
+                        {key.email}
+                      </td>
+                      <td class="py-1.5 font-mono">{key.prefix}…</td>
+                      <td class="py-1.5">{when(key.lastUsed)}</td>
+                      <td class="py-1.5 text-right">
+                        <Button size="small" variant="ghost" onClick={() => void removeKey(key)}>
+                          Remove
+                        </Button>
+                      </td>
+                    </tr>
+                  )}
+                </For>
+              </tbody>
+            </table>
+          </Show>
+        </Section>
 
         {/* ---------- Sign-in setup (admins) ---------- */}
         <Show when={isAdmin() && setup()}>

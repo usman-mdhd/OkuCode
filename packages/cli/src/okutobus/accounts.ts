@@ -5,11 +5,11 @@
 // - Every request that relies on the session cookie must also carry the `okucode_user` cookie of an active user, so
 //   disabling or removing someone signs them out at once. Password (Basic) access for the owner is unchanged.
 // - Admin API under /okucode/api, admin page at /okucode/admin, invite emails through Gmail.
-import { createHmac, randomBytes, timingSafeEqual } from "node:crypto"
+import { createHash, createHmac, randomBytes, randomUUID, timingSafeEqual } from "node:crypto"
 import { Option } from "effect"
 import { ServerAuth } from "@opencode/server/auth"
 import { ADMIN_PAGE } from "./admin-page"
-import { activeAdmins, isRole, normalize, validEmail, type Role, type Settings, type Store, type User } from "./accounts-store"
+import { activeAdmins, isRole, normalize, validEmail, type ApiKey, type Role, type Settings, type Store, type User } from "./accounts-store"
 import { send } from "./smtp"
 import { readFileSync, statSync } from "node:fs"
 import nodePath from "node:path"
@@ -121,9 +121,44 @@ export function createAccounts(input: {
     return separator > 0 && decoded.slice(separator + 1) === input.password
   }
 
-  function currentUser(request: Request) {
-    return basicOwner(request) ? ownerUser() : cookieUser(request)
+  // ---- API keys (FR-56) ----
+
+  const KEY = /^Bearer\s+(oku_[A-Za-z0-9_-]{20,})$/i
+  const keyHash = (key: string) => createHash("sha256").update(key).digest("hex")
+  let lastUsedSaved = 0
+
+  /** The person a "Authorization: Bearer oku_…" key belongs to, when the key and the person are valid. */
+  function keyUser(request: Request): User | undefined {
+    const match = KEY.exec(request.headers.authorization ?? "")
+    if (!match) return undefined
+    const hash = keyHash(match[1]!)
+    const keys = store.keys()
+    const key = keys.find((item) => same(item.hash, hash))
+    if (!key) return undefined
+    const user = key.email === OWNER ? ownerUser() : store.get(key.email)
+    if (!user || user.status === "disabled") return undefined
+    // Note when a key was last used, at most once a minute.
+    if (now() - lastUsedSaved > 60_000 || !key.lastUsed) {
+      lastUsedSaved = now()
+      key.lastUsed = now()
+      store.saveKeys(keys)
+    }
+    return user
   }
+
+  function currentUser(request: Request) {
+    return basicOwner(request) ? ownerUser() : (keyUser(request) ?? cookieUser(request))
+  }
+
+  const keyView = (key: ApiKey) => ({
+    id: key.id,
+    name: key.name,
+    email: key.email,
+    prefix: key.prefix,
+    createdAt: key.createdAt,
+    createdBy: key.createdBy,
+    lastUsed: key.lastUsed,
+  })
 
   function settings() {
     const value = store.settings()
@@ -484,6 +519,12 @@ export function createAccounts(input: {
     if (path === "/okucode/api/skills" && request.method === "GET")
       return json(200, { disabled: settings().disabledSkills ?? [] })
 
+    // FR-56: API keys. Admins see and make keys for anyone; team leads for themselves and members.
+    if (path === "/okucode/api/keys" && request.method === "GET") {
+      const visible = store.keys().filter((key) => isAdmin || key.email === by || store.get(key.email)?.role === "member")
+      return json(200, { keys: visible.map(keyView) })
+    }
+
     // FR-60: the audit log. Admins see whether the hash chain is intact and download a day's log.
     if (path === "/okucode/api/audit" && request.method === "GET") {
       if (!isAdmin) return adminOnly()
@@ -591,6 +632,38 @@ export function createAccounts(input: {
       value.disabledSkills = [...off].sort()
       store.saveSettings(value)
       return json(200, { disabled: value.disabledSkills })
+    }
+
+    if (path === "/okucode/api/keys" && request.method === "POST") {
+      const next = await body<{ name?: unknown; email?: unknown }>(request)
+      const name = typeof next.name === "string" ? next.name.trim().slice(0, 80) : ""
+      if (!name) return json(400, { error: "Give the key a name, like \"CI script\"." })
+      const email = typeof next.email === "string" && next.email.trim() ? normalize(next.email) : by
+      const owner = email === OWNER ? ownerUser() : store.get(email)
+      if (!owner) return json(400, { error: "Add this person first." })
+      if (!isAdmin && email !== by && owner.role !== "member") return json(403, { error: "Team leads can make keys only for themselves and members." })
+      const secret = `oku_${randomBytes(24).toString("base64url")}`
+      const key: ApiKey = {
+        id: randomUUID(),
+        name,
+        email,
+        prefix: secret.slice(0, 10),
+        hash: keyHash(secret),
+        createdAt: now(),
+        createdBy: by,
+      }
+      store.saveKeys([...store.keys(), key])
+      return json(200, { key: keyView(key), secret })
+    }
+    if (path.startsWith("/okucode/api/keys/") && request.method === "DELETE") {
+      const id = decodeURIComponent(path.slice("/okucode/api/keys/".length))
+      const keys = store.keys()
+      const key = keys.find((item) => item.id === id)
+      if (!key) return json(404, { error: "No such key." })
+      if (!isAdmin && key.email !== by && store.get(key.email)?.role !== "member")
+        return json(403, { error: "Team leads can remove keys only of themselves and members." })
+      store.saveKeys(keys.filter((item) => item.id !== id))
+      return json(200, { ok: true })
     }
 
     if (path === "/okucode/api/audit" && request.method === "PUT") {
@@ -794,6 +867,19 @@ export function createAccounts(input: {
     },
 
     /**
+     * FR-56: for "Authorization: Bearer oku_…" requests to the OkuCode API, the server's own credentials for that
+     * request (a session for the server password) so the API accepts it, or a 401 for a key that is not valid.
+     * undefined for every other request.
+     */
+    apiKeyAuth(request: Request): { authorization: string; email: string } | Response | undefined {
+      if (!/^Bearer\s+oku_/i.test(request.headers.authorization ?? "")) return undefined
+      const user = keyUser(request)
+      if (!user) return json(401, { _tag: "UnauthorizedError", message: "This API key is not valid or was removed." })
+      const session = ServerAuth.issueSession(auth, now())!
+      return { authorization: `Basic ${Buffer.from(`opencode:${session}`).toString("base64")}`, email: user.email }
+    },
+
+    /**
      * For all other requests: a request that relies on the session cookie (no password) must belong to a user that is
      * still allowed. Returns a 401 response to stop it, or undefined to let it through.
      */
@@ -802,7 +888,7 @@ export function createAccounts(input: {
       // FR-58: remember who sends each chat, for usage per person.
       const prompt = request.method === "POST" ? path.match(/^\/api\/session\/([^/]+)\/prompt$/) : null
       if (prompt) {
-        const user = cookieUser(request)
+        const user = keyUser(request) ?? cookieUser(request)
         if (user) {
           try {
             store.noteSession(decodeURIComponent(prompt[1]!), user.email)

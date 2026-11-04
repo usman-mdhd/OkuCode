@@ -308,6 +308,59 @@ describe("OkuCode accounts", () => {
     }
   })
 
+  test("API keys: made once, used as the person, limited for leads, removed or stopped when disabled (FR-56)", async () => {
+    const t = setup()
+    const bearer = (method: string, url: string, key: string): Request => {
+      const base = t.request(method, url, { noCookies: true })
+      return { ...base, headers: { ...base.headers, authorization: `Bearer ${key}` } }
+    }
+    await t.call("POST", "/okucode/auth/password", { body: { password: PASSWORD } })
+    await t.call("POST", "/okucode/api/users", { body: { email: "boss@okutobus.com", role: "admin" } })
+    await t.call("POST", "/okucode/api/users", { body: { email: "dev@okutobus.com" } })
+    await t.call("POST", "/okucode/api/users", { body: { email: "new@okutobus.com", role: "lead" } })
+    expect((await t.call("POST", "/okucode/api/keys", { body: { name: " " } })).status).toBe(400)
+    expect((await t.call("POST", "/okucode/api/keys", { body: { name: "x", email: "nobody@okutobus.com" } })).status).toBe(400)
+
+    // An admin makes a key for a member: the secret comes back once, only its hash is stored.
+    const made = await t.call("POST", "/okucode/api/keys", { body: { name: "CI script", email: "Dev@Okutobus.com" } })
+    expect(made.status).toBe(200)
+    const secret = made.data.secret as string
+    expect(secret).toMatch(/^oku_[A-Za-z0-9_-]{32}$/)
+    expect(made.data.key).toMatchObject({ name: "CI script", email: "dev@okutobus.com", prefix: secret.slice(0, 10) })
+    expect(made.data.key.hash).toBeUndefined()
+    expect(JSON.stringify(t.store.keys())).not.toContain(secret)
+
+    // The key works as that person, for OkuCode's own API and for the server API.
+    const me = (await t.accounts.handle(bearer("GET", "/okucode/me", secret)))!
+    expect(JSON.parse(me.body!)).toMatchObject({ email: "dev@okutobus.com", role: "member" })
+    const auth = t.accounts.apiKeyAuth(bearer("GET", "/api/session", secret))
+    expect(auth).toMatchObject({ email: "dev@okutobus.com" })
+    expect((auth as { authorization: string }).authorization).toMatch(/^Basic /)
+    expect(t.store.keys()[0]!.lastUsed).toBeNumber()
+    expect(t.accounts.apiKeyAuth(t.request("GET", "/api/session"))).toBeUndefined()
+    const wrong = t.accounts.apiKeyAuth(bearer("GET", "/api/session", "oku_" + "x".repeat(32)))
+    expect((wrong as Response).status).toBe(401)
+
+    // A lead sees and makes keys for themselves and members, not for admins.
+    await googleSignIn(t)
+    expect((await t.call("POST", "/okucode/api/keys", { body: { name: "boss", email: "boss@okutobus.com" } })).status).toBe(403)
+    const own = await t.call("POST", "/okucode/api/keys", { body: { name: "My laptop" } })
+    expect(own.data.key.email).toBe("new@okutobus.com")
+    await t.call("POST", "/okucode/auth/password", { body: { password: PASSWORD } })
+    await t.call("POST", "/okucode/api/keys", { body: { name: "Boss key", email: "boss@okutobus.com" } })
+    await googleSignIn(t)
+    const seen = (await t.call("GET", "/okucode/api/keys")).data.keys.map((key: { name: string }) => key.name).sort()
+    expect(seen).toEqual(["CI script", "My laptop"])
+
+    // Disabling the person stops their key; removing the key stops it for good.
+    await t.call("PATCH", "/okucode/api/users/dev%40okutobus.com", { body: { disabled: true } })
+    expect((t.accounts.apiKeyAuth(bearer("GET", "/api/session", secret)) as Response).status).toBe(401)
+    await t.call("PATCH", "/okucode/api/users/dev%40okutobus.com", { body: { disabled: false } })
+    expect(t.accounts.apiKeyAuth(bearer("GET", "/api/session", secret))).toMatchObject({ email: "dev@okutobus.com" })
+    expect((await t.call("DELETE", `/okucode/api/keys/${made.data.key.id}`)).status).toBe(200)
+    expect((t.accounts.apiKeyAuth(bearer("GET", "/api/session", secret)) as Response).status).toBe(401)
+  })
+
   test("GitHub sign-in: a verified GitHub email an admin added can sign in (FR-56)", async () => {
     const t = setup()
     const signIn = async () => {
