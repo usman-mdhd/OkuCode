@@ -40,6 +40,9 @@ const ICONS = {
   chat: "M3 3.5h10v7H6.5L3.5 13v-2.5H3v-7Z",
   settings: "M8 10a2 2 0 1 0 0-4 2 2 0 0 0 0 4Zm5.5-2-1.3-.5-.3-.8.6-1.2-1-1-1.2.6-.8-.3L9 2.5H7l-.5 1.3-.8.3-1.2-.6-1 1 .6 1.2-.3.8L2.5 7v2l1.3.5.3.8-.6 1.2 1 1 1.2-.6.8.3L7 13.5h2l.5-1.3.8-.3 1.2.6 1-1-.6-1.2.3-.8 1.3-.5V8Z",
   panel: "M2.5 3h11v10h-11zM6 3v10",
+  // « hide the sidebar, » show it again: arrows read more clearly than a panel shape.
+  hide: "M8.5 4 4.5 8l4 4M12.5 4l-4 4 4 4",
+  show: "M7.5 4l4 4-4 4M3.5 4l4 4-4 4",
   menu: "M2.5 4.5h11M2.5 8h11M2.5 11.5h11",
   search: "M7 12A5 5 0 1 0 7 2a5 5 0 0 0 0 10Zm7 2-3.5-3.5",
   shield: "M8 1.8 13 3.6v4.1c0 3.1-2.1 5.6-5 6.5-2.9-.9-5-3.4-5-6.5V3.6L8 1.8Z",
@@ -126,10 +129,10 @@ export function OkuCodeSidebar() {
       when={!collapsed()}
       fallback={
         <div class="flex shrink-0 flex-col items-center gap-2 px-2 py-3">
-          <button type="button" aria-label="Open sidebar" class="rounded-lg p-2 hover:bg-v2-background-bg-layer-02" onClick={toggle}>
-            <Icon path={ICONS.panel} />
+          <button type="button" aria-label="Show sidebar" title="Show sidebar" class="rounded-lg p-2 hover:bg-v2-background-bg-layer-02" onClick={toggle}>
+            <Icon path={ICONS.show} />
           </button>
-          <button type="button" aria-label="New chat" class="rounded-lg p-2 hover:bg-v2-background-bg-layer-02" onClick={newChat}>
+          <button type="button" aria-label="New chat" title="New chat" class="rounded-lg p-2 hover:bg-v2-background-bg-layer-02" onClick={newChat}>
             <Icon path={ICONS.plus} />
           </button>
         </div>
@@ -144,8 +147,8 @@ export function OkuCodeSidebar() {
             <Mark class="h-5 w-4" />
             <span class="text-[17px] font-semibold text-v2-text-text-base">OkuCode</span>
           </div>
-          <button type="button" aria-label="Close sidebar" class="rounded-md p-1.5 hover:bg-v2-background-bg-layer-02" onClick={toggle}>
-            <Icon path={ICONS.panel} />
+          <button type="button" aria-label="Hide sidebar" title="Hide sidebar" class="rounded-md p-1.5 hover:bg-v2-background-bg-layer-02" onClick={toggle}>
+            <Icon path={ICONS.hide} />
           </button>
         </div>
 
