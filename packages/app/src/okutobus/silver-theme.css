@@ -1,0 +1,220 @@
+/*
+ * Okutobus (OkuCode): "Silver" dark theme — jet black surfaces with chrome / liquid-silver light,
+ * like a black panel lit from its edges. Only dark mode changes; light mode stays as it is.
+ * Not in a cascade layer, so these values win over the theme tokens (which live in @layer theme).
+ */
+
+:root[data-color-scheme="dark"] {
+  /* Surfaces: jet black, a little lighter for raised layers. */
+  --v2-background-bg-deep: #000000;
+  --v2-background-bg-base: #060607;
+  --v2-background-bg-layer-01: #0d0d0f;
+  --v2-background-bg-layer-02: #16161a;
+  --v2-background-bg-layer-03: #1f1f24;
+  --v2-background-bg-layer-04: #2a2a30;
+  --v2-background-bg-contrast: #2a2a30;
+  --v2-background-bg-inverse: #eef0f3;
+  --v2-background-bg-icon-button-contrast: #d9dce1;
+  --v2-background-bg-accent: #c9cdd4;
+
+  /* Text and icons: bright silver, then cooler greys. */
+  --v2-text-text-base: #eceef1;
+  --v2-text-text-muted: #9ea2aa;
+  --v2-text-text-faint: #6c6f77;
+  --v2-text-text-inverse: #050506;
+  --v2-text-text-contrast: #050506;
+  --v2-text-text-accent: #d6d9de;
+  --v2-text-text-accent-hover: #ffffff;
+  --v2-icon-icon-base: #b9bdc5;
+  --v2-icon-icon-muted: #7d8189;
+  --v2-icon-icon-faint: #50535a;
+  --v2-icon-icon-accent: #d6d9de;
+  --v2-icon-icon-accent-hover: #ffffff;
+
+  /* Borders: thin silver lines instead of plain grey. */
+  --v2-border-border-muted: rgba(205, 210, 220, 0.1);
+  --v2-border-border-base: rgba(205, 210, 220, 0.14);
+  --v2-border-border-strong: rgba(220, 225, 232, 0.28);
+  --v2-border-border-focus: #d6d9de;
+
+  --v2-overlay-simple-overlay-hover: rgba(220, 225, 232, 0.07);
+  --v2-overlay-simple-overlay-pressed: rgba(220, 225, 232, 0.12);
+
+  /* Silver rim light on raised panels, menus and dialogs. */
+  --oku-silver-rim: 0 0 0 0.5px rgba(225, 229, 236, 0.22), 0 -0.5px 0 0 rgba(255, 255, 255, 0.14);
+  --v2-elevation-raised: 0 2px 6px 0 rgba(0, 0, 0, 0.6), var(--oku-silver-rim);
+  --v2-elevation-floating: 0 10px 24px 0 rgba(0, 0, 0, 0.7), 0 0 24px 0 rgba(200, 205, 215, 0.06), var(--oku-silver-rim);
+  --v2-elevation-overlay: 0 18px 40px 0 rgba(0, 0, 0, 0.75), 0 0 32px 0 rgba(200, 205, 215, 0.08), var(--oku-silver-rim);
+
+  /* The liquid-silver gradient used for borders, the send button and the greeting. */
+  --oku-chrome: linear-gradient(
+    135deg,
+    #ffffff 0%,
+    #9a9ea6 22%,
+    #f2f3f5 42%,
+    #5d6068 62%,
+    #e6e8eb 80%,
+    #8c9098 100%
+  );
+
+  background: #000000;
+}
+
+/* The page behind the panels: pure black with a faint silver glow at the top, like the reference light. */
+:root[data-color-scheme="dark"] body {
+  background:
+    radial-gradient(120% 60% at 50% -10%, rgba(190, 196, 206, 0.1), transparent 60%),
+    #000000;
+}
+
+/* Main panels (start screen, chat, settings): black with a soft silver edge. */
+:root[data-color-scheme="dark"] [data-component="new-session"],
+:root[data-color-scheme="dark"] [data-slot="home-panel"],
+:root[data-color-scheme="dark"] [data-slot="session-panel"] {
+  background:
+    radial-gradient(80% 50% at 50% 0%, rgba(205, 210, 220, 0.07), transparent 70%),
+    linear-gradient(180deg, #0a0a0c 0%, #030304 100%);
+  /* Rim light: bright silver at the top edge, fading down the sides, with a soft glow outside. */
+  box-shadow:
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.22),
+    inset 0 0 0 1px rgba(215, 220, 228, 0.1),
+    inset 0 0 80px 0 rgba(200, 205, 215, 0.035),
+    0 0 0 0.5px rgba(225, 229, 236, 0.28),
+    0 0 28px 0 rgba(200, 205, 215, 0.1);
+}
+
+/* In a chat the inner areas paint the base colour, so the panel stays solid (a gradient would show as a box). */
+:root[data-color-scheme="dark"] [data-slot="session-panel"] {
+  background: var(--v2-background-bg-base);
+  box-shadow:
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.22),
+    0 0 0 0.5px rgba(225, 229, 236, 0.28),
+    0 0 28px 0 rgba(200, 205, 215, 0.1);
+}
+
+/* Sidebar: jet black with a silver hairline on its edge. */
+:root[data-color-scheme="dark"] [data-slot="okucode-sidebar"] {
+  background: #000000;
+  border-inline-end-color: rgba(205, 210, 220, 0.12);
+}
+
+/* Greeting: chrome text. */
+:root[data-color-scheme="dark"] [data-component="okucode-greeting"] span {
+  background: linear-gradient(180deg, #ffffff 0%, #d9dce1 45%, #8e929a 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+/* ---------- Message box: silver border with a glow that is always on ---------- */
+
+@property --oku-glow {
+  syntax: "<number>";
+  inherits: false;
+  initial-value: 1;
+}
+
+:root[data-color-scheme="dark"] [data-component="composer"] {
+  --oku-glow: 1;
+
+  border: 1.5px solid transparent;
+  background:
+    linear-gradient(180deg, #111114 0%, #08080a 100%) padding-box,
+    var(--oku-chrome) border-box;
+  background-size: 100% 100%, 300% 300%;
+  box-shadow:
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.1),
+    0 0 calc(8px * var(--oku-glow)) 0 rgba(235, 238, 242, calc(0.3 * var(--oku-glow))),
+    0 0 calc(24px * var(--oku-glow)) 0 rgba(215, 220, 228, calc(0.2 * var(--oku-glow))),
+    0 0 calc(60px * var(--oku-glow)) 0 rgba(200, 205, 215, calc(0.1 * var(--oku-glow)));
+  animation:
+    oku-silver-glow 4.5s ease-in-out infinite,
+    oku-silver-flow 9s linear infinite;
+}
+
+/* Brighter while typing. */
+:root[data-color-scheme="dark"] [data-component="composer"]:focus-within {
+  animation-name: oku-silver-glow-focus, oku-silver-flow;
+}
+
+@keyframes oku-silver-glow {
+  0%,
+  100% {
+    --oku-glow: 0.85;
+  }
+  50% {
+    --oku-glow: 1.35;
+  }
+}
+
+@keyframes oku-silver-glow-focus {
+  0%,
+  100% {
+    --oku-glow: 1.4;
+  }
+  50% {
+    --oku-glow: 1.8;
+  }
+}
+
+/* The light on the border slowly moves around, like liquid metal. */
+@keyframes oku-silver-flow {
+  0%,
+  100% {
+    background-position: 0 0, 0% 50%;
+  }
+  50% {
+    background-position: 0 0, 100% 50%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root[data-color-scheme="dark"] [data-component="composer"] {
+    animation: none;
+  }
+}
+
+/* Send button: polished silver with a black arrow. */
+:root[data-color-scheme="dark"] [data-component="icon-button-v2"][data-variant="submit"],
+:root[data-color-scheme="dark"] [data-component="button-v2"][data-variant="submit"] {
+  background-image: linear-gradient(180deg, #ffffff 0%, #d4d7dc 48%, #a4a8b0 100%);
+  color: #050506;
+  box-shadow:
+    0 0 0 0.5px rgba(255, 255, 255, 0.5),
+    0 0 12px 0 rgba(220, 225, 232, 0.25);
+}
+
+:root[data-color-scheme="dark"] [data-component="icon-button-v2"][data-variant="submit"]:disabled {
+  opacity: 0.45;
+  box-shadow: none;
+}
+
+/* ---------- Chat ---------- */
+
+/* Your messages: graphite with a silver edge (instead of blue). */
+:root[data-color-scheme="dark"] body [data-component="user-message"] [data-slot="user-message-text"],
+:root[data-color-scheme="dark"]
+  body
+  :is([data-local-session], [data-workspace-session])
+  [data-component="user-message"]:not([data-pending])
+  [data-slot="user-message-text"] {
+  --user-message-mention-prefix-color: #d6d9de;
+
+  background: linear-gradient(180deg, #1d1d22 0%, #121215 100%);
+  color: #eceef1;
+  box-shadow:
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.08),
+    0 0 0 0.5px rgba(220, 225, 232, 0.24);
+}
+
+/* Selected chat in the sidebar and hovered rows: a faint silver wash. */
+:root[data-color-scheme="dark"] [data-slot="okucode-sidebar"] .bg-v2-background-bg-layer-02 {
+  background: linear-gradient(90deg, rgba(220, 225, 232, 0.12), rgba(220, 225, 232, 0.04));
+  box-shadow: inset 0 0 0 0.5px rgba(220, 225, 232, 0.14);
+}
+
+/* Text selection and focus rings in silver. */
+:root[data-color-scheme="dark"] ::selection {
+  background: rgba(214, 217, 222, 0.3);
+  color: #ffffff;
+}
