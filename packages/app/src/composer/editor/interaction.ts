@@ -461,6 +461,11 @@ export function createComposerEditor(input: {
     addSuggestion(item: ComposerSuggestion) {
       dispatch({ type: "popover.select", item })
     },
+    // Okutobus (OkuCode): suggestion chips on the start screen fill the message box.
+    setText(value: string) {
+      draft.setText(value)
+      dispatch({ type: "focus.editor" })
+    },
     submit(options?: { alternate?: boolean }) {
       if (input.view.submit.available?.() === false) return
 

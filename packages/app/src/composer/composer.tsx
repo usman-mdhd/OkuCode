@@ -45,7 +45,7 @@ export function Composer(props: {
             keybind={command.keybindParts("model.choose")}
             model={props.model.model.selection}
             provider={props.model.model.selection.current()?.provider}
-            modelName={props.model.model.selection.current()?.name ?? language.t("dialog.model.select.title")}
+            modelName={shortModelName(props.model.model.selection.current()?.name) ?? language.t("dialog.model.select.title")}
             onClose={props.model.restoreFocus}
             onUnpaidClick={() => dialog.show(() => <DialogSelectModelUnpaid model={props.model.model.selection} />)}
           />
@@ -53,6 +53,11 @@ export function Composer(props: {
       />
     </div>
   )
+}
+
+/** Okutobus (OkuCode): "Qwen 2.5 Coder 14B (16k)" → "Qwen 2.5 Coder 14B", so the name fits the button. */
+export function shortModelName(name: string | undefined) {
+  return name?.replace(/\s*\([^)]*\)\s*$/, "").trim() || name
 }
 
 function ComposerModelControl(props: {

@@ -20,7 +20,7 @@ import { NEW_SESSION_CONTENT_WIDTH } from "@/new-session/layout"
 import { Persist, persisted } from "@/runtime/persistence/storage"
 import { Persistence } from "@/runtime/persistence/schema"
 import type { NewSessionWorkspaceController } from "./workspace/controller"
-import { OkuGreeting } from "@/okutobus/greeting"
+import { OkuGreeting, OkuSuggestions } from "@/okutobus/greeting"
 
 const providerTipDismissalDuration = 30 * 24 * 60 * 60 * 1000
 
@@ -63,8 +63,10 @@ export function NewSessionView(props: {
         />
         {/* Okutobus (OkuCode): greeting in the middle, message box at the bottom like in a chat. */}
         <div class="absolute inset-0 flex flex-col items-center px-6 pb-14">
-          <div class="flex min-h-0 flex-1 items-center justify-center">
+          <div data-slot="okucode-silver-arc" aria-hidden="true" />
+          <div class="relative flex min-h-0 flex-1 flex-col items-center justify-center gap-6">
             <OkuGreeting />
+            <OkuSuggestions onPick={(text) => props.composer.setText(text)} />
           </div>
           <div class={NEW_SESSION_CONTENT_WIDTH}>
             <div class="flex flex-col gap-3">

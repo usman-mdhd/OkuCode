@@ -218,3 +218,72 @@
   background: rgba(214, 217, 222, 0.3);
   color: #ffffff;
 }
+
+/* ---------- Start screen ---------- */
+
+/* Silver logo in dark mode, the plain one in light mode. */
+[data-component="okucode-silver-mark"] {
+  display: none;
+}
+:root[data-color-scheme="dark"] [data-component="okucode-silver-mark"] {
+  display: block;
+  filter: drop-shadow(0 0 6px rgba(225, 229, 236, 0.25));
+}
+:root[data-color-scheme="dark"] [data-component="okucode-greeting"] .oku-mark-plain {
+  display: none;
+}
+
+/* A faint curved band of silver light behind the greeting, like the reference artwork. */
+[data-slot="okucode-silver-arc"] {
+  display: none;
+}
+:root[data-color-scheme="dark"] [data-slot="okucode-silver-arc"] {
+  display: block;
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  overflow: hidden;
+}
+:root[data-color-scheme="dark"] [data-slot="okucode-silver-arc"]::before,
+:root[data-color-scheme="dark"] [data-slot="okucode-silver-arc"]::after {
+  content: "";
+  position: absolute;
+  border: 1px solid rgba(236, 239, 243, 0.2);
+  /* Soft light spilling from the edge, outside and inside. */
+  box-shadow:
+    0 -6px 40px 2px rgba(205, 210, 220, 0.1),
+    inset 0 10px 50px 0 rgba(205, 210, 220, 0.06);
+}
+/* Upper band: starts off the left edge, curves down on the right; only its top half is lit. */
+:root[data-color-scheme="dark"] [data-slot="okucode-silver-arc"]::before {
+  left: -12%;
+  right: 16%;
+  top: 7%;
+  height: 34%;
+  border-radius: 0 220px 220px 0;
+  -webkit-mask-image: linear-gradient(180deg, #000 0%, rgba(0, 0, 0, 0.6) 35%, transparent 62%);
+  mask-image: linear-gradient(180deg, #000 0%, rgba(0, 0, 0, 0.6) 35%, transparent 62%);
+}
+/* Lower band: between the greeting and the message box, running off the right edge. */
+:root[data-color-scheme="dark"] [data-slot="okucode-silver-arc"]::after {
+  left: 34%;
+  right: -12%;
+  top: 54%;
+  height: 22%;
+  border-radius: 180px 0 0 180px;
+  border-color: rgba(236, 239, 243, 0.14);
+  -webkit-mask-image: linear-gradient(180deg, #000 0%, rgba(0, 0, 0, 0.5) 40%, transparent 75%);
+  mask-image: linear-gradient(180deg, #000 0%, rgba(0, 0, 0, 0.5) 40%, transparent 75%);
+}
+
+/* Suggestion chips: glassy black with a silver edge. */
+:root[data-color-scheme="dark"] [data-slot="okucode-suggestion"] {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.01));
+  border-color: rgba(220, 225, 232, 0.16);
+  color: #c2c5cc;
+}
+:root[data-color-scheme="dark"] [data-slot="okucode-suggestion"]:hover {
+  border-color: rgba(235, 238, 242, 0.45);
+  color: #ffffff;
+  box-shadow: 0 0 14px 0 rgba(215, 220, 228, 0.18);
+}
