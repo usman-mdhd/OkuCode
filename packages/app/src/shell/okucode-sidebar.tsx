@@ -171,7 +171,7 @@ export function OkuCodeSidebar() {
           </button>
         </div>
 
-        <button type="button" class={`${row} bg-v2-background-bg-layer-01 font-medium`} onClick={newChat}>
+        <button type="button" data-slot="okucode-new-chat" class={`${row} bg-v2-background-bg-layer-01 font-medium`} onClick={newChat}>
           <Icon path={ICONS.plus} />
           New chat
         </button>

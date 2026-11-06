@@ -77,6 +77,9 @@ export function NewSessionView(props: {
               <Show when={props.project.selected()}>
                 <div class="flex min-h-7 min-w-0 flex-row flex-wrap items-center justify-center gap-0 text-v2-text-text-faint">
                   <PromptProjectSelector controller={props.project} placement="bottom" />
+                  {/* Okutobus (OkuCode): normal chats (the OkuCode-Chats folder) show only the folder; projects also show
+                      the branch and workspace. */}
+                  <Show when={!/[\\/]OkuCode-Chats[\\/]?$/.test(props.workspace.project.root() ?? "")}>
                   <Show
                     when={props.workspace.bar.visible()}
                     fallback={
@@ -101,6 +104,7 @@ export function NewSessionView(props: {
                       onViewAll={props.workspace.project.openAll}
                     />
                   </Show>
+                  </Show>
                 </div>
               </Show>
             </div>
@@ -110,6 +114,7 @@ export function NewSessionView(props: {
           selection={props.composer.model.selection}
           onDone={props.composer.restoreFocus}
           workspaceEligible={
+            !/[\\/]OkuCode-Chats[\\/]?$/.test(props.workspace.project.root() ?? "") &&
             !!props.project.selected() &&
             props.workspace.bar.visible() &&
             props.workspace.selection.value() !== "create" &&

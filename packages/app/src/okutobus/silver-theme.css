@@ -287,3 +287,104 @@
   color: #ffffff;
   box-shadow: 0 0 14px 0 rgba(215, 220, 228, 0.18);
 }
+
+/* ---------- Sidebar ---------- */
+
+/* New chat: black glass with a silver outline that brightens on hover. */
+:root[data-color-scheme="dark"] [data-slot="okucode-new-chat"] {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0.015));
+  box-shadow:
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.1),
+    0 0 0 1px rgba(220, 225, 232, 0.22);
+  transition: box-shadow 160ms ease;
+}
+:root[data-color-scheme="dark"] [data-slot="okucode-new-chat"]:hover {
+  box-shadow:
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.16),
+    0 0 0 1px rgba(235, 238, 242, 0.5),
+    0 0 14px 0 rgba(215, 220, 228, 0.18);
+}
+
+/* Rows (chats, projects, menu items): a soft silver wash on hover. */
+:root[data-color-scheme="dark"] [data-slot="okucode-sidebar"] button:not([data-slot="okucode-new-chat"]):hover {
+  background: linear-gradient(90deg, rgba(220, 225, 232, 0.09), rgba(220, 225, 232, 0.02));
+}
+
+/* The open chat: silver wash, a thin silver edge and a bright line on the left. */
+:root[data-color-scheme="dark"] [data-slot="okucode-sidebar"] button.bg-v2-background-bg-layer-02 {
+  position: relative;
+  background: linear-gradient(90deg, rgba(225, 229, 236, 0.16), rgba(225, 229, 236, 0.04));
+  box-shadow: inset 0 0 0 0.5px rgba(225, 229, 236, 0.22);
+  color: #ffffff;
+}
+:root[data-color-scheme="dark"] [data-slot="okucode-sidebar"] button.bg-v2-background-bg-layer-02::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 22%;
+  bottom: 22%;
+  width: 2px;
+  border-radius: 2px;
+  background: linear-gradient(180deg, #ffffff, #9a9ea6);
+  box-shadow: 0 0 8px rgba(235, 238, 242, 0.6);
+}
+
+/* Search box: silver edge on focus. */
+:root[data-color-scheme="dark"] [data-slot="okucode-sidebar"] input:focus {
+  box-shadow: 0 0 0 1px rgba(235, 238, 242, 0.4), 0 0 12px 0 rgba(215, 220, 228, 0.14);
+}
+
+/* ---------- Settings and Team ---------- */
+
+/* Switches: off = black track with a silver edge; on = polished silver track with a black thumb. */
+:root[data-color-scheme="dark"] [data-component="switch"] [data-slot="switch-control"] {
+  background: #0d0d10;
+  box-shadow: inset 0 0 0 1px rgba(215, 220, 228, 0.22);
+}
+:root[data-color-scheme="dark"] [data-component="switch"][data-checked] [data-slot="switch-control"],
+:root[data-color-scheme="dark"] [data-component="switch"][data-checked]:hover:not([data-disabled], [data-readonly]) [data-slot="switch-control"] {
+  background: linear-gradient(180deg, #ffffff 0%, #cfd2d8 50%, #9a9ea6 100%);
+  box-shadow:
+    inset 0 0 0 0.5px rgba(255, 255, 255, 0.6),
+    0 0 10px 0 rgba(220, 225, 232, 0.3);
+}
+:root[data-color-scheme="dark"] [data-component="switch"][data-checked] [data-slot="switch-thumb"] {
+  background: #0a0a0c;
+}
+
+/* Settings menu: the open page gets the same silver highlight as the open chat. */
+:root[data-color-scheme="dark"] .settings-nav-groups [data-slot="tabs-v2-trigger-wrapper"]:has([data-selected]) {
+  background: linear-gradient(90deg, rgba(225, 229, 236, 0.15), rgba(225, 229, 236, 0.04));
+  box-shadow: inset 0 0 0 0.5px rgba(225, 229, 236, 0.22);
+}
+:root[data-color-scheme="dark"] .settings-nav-groups [data-slot="tabs-v2-trigger-wrapper"]:not(:has([data-selected])):hover {
+  background: linear-gradient(90deg, rgba(220, 225, 232, 0.09), rgba(220, 225, 232, 0.02));
+}
+
+/* Settings cards: black glass with a silver rim. */
+:root[data-color-scheme="dark"] [data-component="settings-list"] {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.025), rgba(255, 255, 255, 0.005));
+  box-shadow:
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.07),
+    0 0 0 0.5px rgba(220, 225, 232, 0.2);
+}
+
+/* Text fields: silver edge on focus. */
+:root[data-color-scheme="dark"] :is(input, textarea):focus-visible {
+  border-color: rgba(235, 238, 242, 0.5);
+  box-shadow: 0 0 0 1px rgba(235, 238, 242, 0.18), 0 0 12px 0 rgba(215, 220, 228, 0.14);
+  outline: none;
+}
+
+/* Main buttons (contrast): polished silver with black text, like the send button. */
+:root[data-color-scheme="dark"] [data-component="button-v2"][data-variant="contrast"]:not(:disabled) {
+  background-image: linear-gradient(180deg, #ffffff 0%, #d4d7dc 48%, #a4a8b0 100%);
+  color: #050506;
+  box-shadow: 0 0 0 0.5px rgba(255, 255, 255, 0.5), 0 0 10px 0 rgba(220, 225, 232, 0.2);
+}
+
+/* Tabs (e.g. Extensions → MCPs / Plugins / Skills): silver underline/highlight for the open tab. */
+:root[data-color-scheme="dark"] [data-component="tabs"] [data-selected] {
+  color: #ffffff;
+  text-shadow: 0 0 10px rgba(235, 238, 242, 0.35);
+}
