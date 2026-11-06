@@ -33,6 +33,10 @@ import { MAX_STEPS_PROMPT } from "./max-steps.js"
 import { OkuNudge } from "../../okutobus/nudge.js"
 import { OkuTestLoop } from "../../okutobus/test-loop.js"
 
+/** Okutobus (OkuCode): chats where automatic compaction just failed, until when it is paused. */
+const autoCompactionFailed = new Map<string, number>()
+const AUTO_COMPACTION_PAUSE_MS = 10 * 60_000
+
 const CONTINUE_AFTER_INCOMPLETE_STREAM =
   "The previous response was interrupted. Continue from where you left off without repeating completed content."
 
@@ -213,8 +217,16 @@ const layer = Layer.effect(
         // Reuse boundary preparation once; retries refresh context without delivering more input.
         const loaded = initial ?? (yield* prepareContext(sessionID).pipe(Effect.flatMap(context.load)))
         initial = undefined
-        const compacted = yield* compaction.compact({ reason: "auto", context: loaded })
-        if (compacted.status === "failed") return yield* new StepFailedError({ error: compacted.error })
+        // Okutobus (OkuCode): when automatic compaction fails (a small model that does not write the summary), answer
+        // with the full conversation instead of failing the message, and do not retry it in this chat for a while.
+        const skipAuto = (autoCompactionFailed.get(sessionID) ?? 0) > Date.now()
+        const compacted = skipAuto
+          ? ({ status: "skipped" } as const)
+          : yield* compaction.compact({ reason: "auto", context: loaded })
+        if (compacted.status === "failed" && compacted.error.type === "compaction.failed") {
+          autoCompactionFailed.set(sessionID, Date.now() + AUTO_COMPACTION_PAUSE_MS)
+          yield* Effect.logWarning("auto compaction failed; continuing without it", { sessionID })
+        } else if (compacted.status === "failed") return yield* new StepFailedError({ error: compacted.error })
         if (compacted.status === "completed") {
           assistantMessageID = SessionMessage.ID.create()
           continue

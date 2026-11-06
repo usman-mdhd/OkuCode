@@ -181,6 +181,17 @@ export const buildPrompt = (update: boolean, legacy = false) => {
 const NUDGE =
   "The previous response did not fill in the required summary template. Do not call tools. Return the summary as text using the exact section headings from the template."
 
+/** "## Work State", "**Work State:**", "Work State" → "work state" (for matching a summary against the template). */
+export const headingName = (line: string) =>
+  line
+    .trim()
+    .replace(/^#+\s*/, "")
+    .replace(/^\*\*(.*)\*\*$/, "$1")
+    .replace(/:\s*$/, "")
+    .replace(/\*+/g, "")
+    .trim()
+    .toLowerCase()
+
 /** Summaries written with the previous template carry this catch-all heading. */
 const LEGACY_HEADING = "## Additional Context"
 
@@ -285,7 +296,10 @@ export const layer = Layer.effect(
       const previous = previousCompaction(context.messages)
       const prompt = buildPrompt(previous !== undefined, previous?.summary.includes(LEGACY_HEADING) ?? false)
       const headings = SUMMARY_TEMPLATE.split("\n").filter((line) => line.startsWith("##"))
-      const filled = (text: string) => text.split("\n").some((line) => headings.includes(line.trim()))
+      // Okutobus (OkuCode): small local models often write "**Objective**" or "Objective:" instead of "## Objective";
+      // any section heading of the template counts, however it is marked up.
+      const names = new Set(headings.map((line) => headingName(line)))
+      const filled = (text: string) => text.split("\n").some((line) => names.has(headingName(line)))
       const prepared = yield* prepare(context, context.messages, budget)
 
       // Hooks saw the request without the summary prompt, so it is appended here. A reply that ignores the
