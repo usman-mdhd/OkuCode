@@ -899,6 +899,28 @@ export function createAccounts(input: {
     },
 
     /**
+     * For API requests of a signed-in person (valid sign-in cookie, no password or key): the server's credentials for
+     * this request, with a fresh session and a fresh session cookie. The person's sign-in cookie is what counts, so a
+     * stale session cookie (an older server password, another OkuCode on this computer) cannot leave the page half
+     * loaded: signed in, but every request refused.
+     */
+    cookieAuth(request: Request): { authorization: string; cookies: string[] } | undefined {
+      const path = request.url.pathname
+      if (!(path === "/api" || path.startsWith("/api/") || path === "/openapi.json")) return undefined
+      if (request.headers.authorization || request.url.searchParams.get("auth_token")) return undefined
+      if (!cookieUser(request)) return undefined
+      const name = ServerAuth.sessionCookieName(request.headers.host)
+      const current = request.cookies[name]
+      if (current && ServerAuth.verifySession(current, auth, now())) return undefined
+      const session = ServerAuth.issueSession(auth, now())
+      if (!session) return undefined
+      return {
+        authorization: `Basic ${Buffer.from(`opencode:${session}`).toString("base64")}`,
+        cookies: [cookie(name, session, USER_TTL, secure(request))],
+      }
+    },
+
+    /**
      * For all other requests: a request that relies on the session cookie (no password) must belong to a user that is
      * still allowed. Returns a 401 response to stop it, or undefined to let it through.
      */

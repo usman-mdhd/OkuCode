@@ -367,6 +367,31 @@ describe("OkuCode accounts", () => {
     expect((t.accounts.apiKeyAuth(bearer("GET", "/api/session", secret)) as { status: number }).status).toBe(401)
   })
 
+  test("a signed-in person with a stale session cookie still gets the API (fresh session); disabled people do not", async () => {
+    const t = setup()
+    await t.call("POST", "/okucode/auth/password", { body: { password: PASSWORD } })
+    await t.call("POST", "/okucode/api/users", { body: { email: "new@okutobus.com", role: "admin" } })
+    await googleSignIn(t)
+    const name = Object.keys(t.cookies).find((key) => key.startsWith("opencode_session"))!
+    // A valid session cookie needs nothing extra.
+    expect(t.accounts.cookieAuth(t.request("GET", "/api/session"))).toBeUndefined()
+    // A stale one (older password, another OkuCode) is replaced.
+    t.cookies[name] = "1999999999.stale"
+    const fresh = t.accounts.cookieAuth(t.request("GET", "/api/session"))!
+    expect(fresh.authorization).toMatch(/^Basic /)
+    expect(fresh.cookies[0]).toStartWith(`${name}=`)
+    expect(t.accounts.gate(t.request("GET", "/api/session"))).toBeUndefined()
+    // Not for the page itself, nor when a password is sent.
+    expect(t.accounts.cookieAuth(t.request("GET", "/"))).toBeUndefined()
+    expect(t.accounts.cookieAuth(t.request("GET", "/api/session", { basic: true }))).toBeUndefined()
+    // A disabled person gets nothing and is signed out.
+    t.store.update("new@okutobus.com", (user) => {
+      user.status = "disabled"
+    })
+    expect(t.accounts.cookieAuth(t.request("GET", "/api/session"))).toBeUndefined()
+    expect(t.accounts.gate(t.request("GET", "/api/session"))!.status).toBe(401)
+  })
+
   test("GitHub sign-in: a verified GitHub email an admin added can sign in (FR-56)", async () => {
     const t = setup()
     const signIn = async () => {

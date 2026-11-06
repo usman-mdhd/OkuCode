@@ -39,6 +39,17 @@ export function wrap(accounts: Accounts) {
             request.modify({ headers: { ...request.headers, authorization: key.authorization } }),
           ),
         )
+      // A signed-in person whose session cookie is stale: run the request with a fresh session and renew the cookie.
+      const signedIn = key ? undefined : accounts.cookieAuth(input)
+      if (signedIn) {
+        const response = yield* app.pipe(
+          Effect.provideService(
+            HttpServerRequest.HttpServerRequest,
+            request.modify({ headers: { ...request.headers, authorization: signedIn.authorization } }),
+          ),
+        )
+        return HttpServerResponse.setHeader(response, "set-cookie", signedIn.cookies[0]!)
+      }
       return yield* app
     })
 }
