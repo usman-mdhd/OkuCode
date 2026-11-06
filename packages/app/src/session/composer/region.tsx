@@ -34,6 +34,7 @@ import { createSessionRequestModel } from "../requests/model"
 import type { Region } from "@/runtime/extension/panels"
 import { SessionLocationMissing } from "./location-missing"
 import { PlanApprovalBar } from "@/okutobus/plan-approval"
+import { isLocked, LockedChatBar } from "@/okutobus/chat-actions"
 
 export function createActiveSessionRegion(input: {
   session: SessionModel
@@ -319,12 +320,21 @@ export function ActiveSessionComposerRegion(props: {
               <SessionQueuePanel queue={props.model.queue} />
               <PlanApprovalBar session={props.session} adapter={props.model.adapter} composer={props.model.composer} />
               <div class="relative z-10">
-                <Composer
-                  model={props.model.composer}
-                  borderUnderlay
-                  readOnly={props.model.queue.undoing()}
-                  suggestionBoundary={props.suggestionBoundary}
-                />
+                {/* Okutobus: a locked chat shows a bar with Unlock instead of the message box. */}
+                <Show
+                  when={isLocked(props.session.data.info()) && props.session.data.info()}
+                  keyed
+                  fallback={
+                    <Composer
+                      model={props.model.composer}
+                      borderUnderlay
+                      readOnly={props.model.queue.undoing()}
+                      suggestionBoundary={props.suggestionBoundary}
+                    />
+                  }
+                >
+                  {(info) => <LockedChatBar session={info} />}
+                </Show>
               </div>
             </div>
           }

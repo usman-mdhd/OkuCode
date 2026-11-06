@@ -14,6 +14,8 @@ import { useSettingsCommand, useSettingsDialog } from "@/settings/command"
 import { usePlatform } from "@/runtime/platform/platform"
 import { Menu } from "@opencode/ui/menu"
 import { ServerConnection } from "@/runtime/server/registry"
+import { useDialog } from "@opencode/ui/context/dialog"
+import { ArchivedChats, createChatActions, isLocked, isPinned } from "@/okutobus/chat-actions"
 
 const COLLAPSED_KEY = "okucode.sidebar.collapsed"
 
@@ -46,37 +48,170 @@ const ICONS = {
   hide: "M8.5 4 4.5 8l4 4M12.5 4l-4 4 4 4",
   show: "M7.5 4l4 4-4 4M3.5 4l4 4-4 4",
   menu: "M2.5 4.5h11M2.5 8h11M2.5 11.5h11",
+  archive: "M2.5 3h11v3h-11zM3.5 6v7.5h9V6M6.5 9h3",
   search: "M7 12A5 5 0 1 0 7 2a5 5 0 0 0 0 10Zm7 2-3.5-3.5",
   shield: "M8 1.8 13 3.6v4.1c0 3.1-2.1 5.6-5 6.5-2.9-.9-5-3.4-5-6.5V3.6L8 1.8Z",
   logout: "M6 2.5H3.5v11H6M10.5 11 13.5 8l-3-3M13.5 8H6",
   help: "M8 14.5A6.5 6.5 0 1 0 8 1.5a6.5 6.5 0 0 0 0 13ZM6.2 6.2a1.9 1.9 0 0 1 3.6.7c0 1.3-1.8 1.6-1.8 2.8M8 11.6h.01",
 }
 
-// Right-click a chat to open or delete it (delete asks first).
-function ChatRow(props: { record: HomeSessionRecord; active: boolean; open: () => void; remove: () => void }) {
-  const title = () => sessionTitle(props.record.session.title) || "New chat"
+const MENU_ICONS = {
+  rename: "M10.5 2.5l3 3L6 13H3v-3l7.5-7.5Z",
+  pin: "M9.5 2 14 6.5l-2 .5-2.5 2.5.5 3-1 1-3-3L3 13.5M6 10 2.5 6.5l1-1 3 .5L9 3.5l.5-1.5",
+  lock: "M4.5 7V5a3.5 3.5 0 0 1 7 0v2M3.5 7h9v6.5h-9z",
+  share: "M8 10V2.5M5 5.5l3-3 3 3M3 9v4.5h10V9",
+  archive: "M2.5 3h11v3h-11zM3.5 6v7.5h9V6M6.5 9h3",
+  trash: "M3 4.5h10M6.5 4.5V3h3v1.5M4.5 4.5l.5 9h6l.5-9",
+  folder: "M2 4.5A1.5 1.5 0 0 1 3.5 3h3l1.5 1.5h4.5A1.5 1.5 0 0 1 14 6v5.5A1.5 1.5 0 0 1 12.5 13h-9A1.5 1.5 0 0 1 2 11.5v-7Z",
+  link: "M7 9a2.5 2.5 0 0 0 3.5 0l2-2A2.5 2.5 0 0 0 9 3.5l-.5.5M9 7a2.5 2.5 0 0 0-3.5 0l-2 2A2.5 2.5 0 0 0 7 12.5l.5-.5",
+  download: "M8 2.5V10M5 7l3 3 3-3M3 12.5h10",
+}
+
+function ItemLabel(props: { icon: keyof typeof MENU_ICONS; children: string; danger?: boolean }) {
   return (
-    <Menu.Context modal={false}>
-      <Menu.Context.Trigger
-        as="button"
-        type="button"
-        class={`${row} text-[13.5px]`}
-        classList={{ "bg-v2-background-bg-layer-02": props.active }}
-        title={`${title()} · ${props.record.projectName}`}
-        onClick={props.open}
-      >
-        <span class="truncate">{title()}</span>
-      </Menu.Context.Trigger>
-      <Menu.Context.Portal>
-        <Menu.Context.Content style={{ "min-width": "160px" }}>
-          <Menu.Item onSelect={props.open}>Open</Menu.Item>
-          <Menu.Separator />
-          <Menu.Item onSelect={props.remove} data-action="okucode-chat-delete" class="text-v2-text-text-critical">
-            Delete chat
-          </Menu.Item>
-        </Menu.Context.Content>
-      </Menu.Context.Portal>
-    </Menu.Context>
+    <span class="flex items-center gap-2.5" style={props.danger ? { color: "#f2555a" } : undefined}>
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true" class="shrink-0">
+        <path d={MENU_ICONS[props.icon]} stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round" />
+      </svg>
+      {props.children}
+    </span>
+  )
+}
+
+type ChatActions = ReturnType<typeof createChatActions>
+
+// Right-click a chat: rename, pin, lock, share, archive, delete or move it to another project.
+// A locked chat can only be pinned, shared or unlocked.
+function ChatRow(props: {
+  record: HomeSessionRecord
+  active: boolean
+  open: () => void
+  remove: () => void
+  actions: ChatActions
+  projects: { worktree: string }[]
+  download: () => void
+}) {
+  const session = () => props.record.session
+  const title = () => sessionTitle(session().title) || "New chat"
+  const pinned = () => isPinned(session())
+  const locked = () => isLocked(session())
+  const [editing, setEditing] = createSignal(false)
+  let input: HTMLInputElement | undefined
+
+  const startRename = () => {
+    setEditing(true)
+    // Wait for the menu to close and give the focus back before selecting the name.
+    setTimeout(() => {
+      input?.focus()
+      input?.select()
+    }, 50)
+  }
+  const finishRename = (save: boolean) => {
+    if (!editing()) return
+    const value = input?.value ?? ""
+    setEditing(false)
+    if (save) void props.actions.rename(session(), value)
+  }
+
+  return (
+    <Show
+      when={!editing()}
+      fallback={
+        <input
+          ref={input}
+          data-slot="okucode-chat-rename"
+          aria-label="Chat name"
+          value={title()}
+          maxLength={200}
+          class={`${row} text-[13.5px] bg-v2-background-bg-layer-02 outline-none ring-1 ring-v2-border-border-strong`}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") finishRename(true)
+            if (event.key === "Escape") finishRename(false)
+          }}
+          onBlur={() => finishRename(true)}
+        />
+      }
+    >
+      <Menu.Context modal={false}>
+        <Menu.Context.Trigger
+          as="button"
+          type="button"
+          class={`${row} text-[13.5px]`}
+          classList={{ "bg-v2-background-bg-layer-02": props.active }}
+          title={`${title()} · ${props.record.projectName}`}
+          onClick={props.open}
+          data-chat-id={session().id}
+        >
+          <span class="min-w-0 flex-1 truncate">{title()}</span>
+          <Show when={locked()}>
+            <svg width="12" height="12" viewBox="0 0 16 16" fill="none" aria-label="Locked" class="shrink-0 text-v2-text-text-faint">
+              <path d={MENU_ICONS.lock} stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" />
+            </svg>
+          </Show>
+        </Menu.Context.Trigger>
+        <Menu.Context.Portal>
+          <Menu.Context.Content data-slot="okucode-chat-menu" style={{ "min-width": "200px" }}>
+            <Menu.Item onSelect={startRename} disabled={locked()} data-action="okucode-chat-rename">
+              <ItemLabel icon="rename">Rename</ItemLabel>
+            </Menu.Item>
+            <Menu.Item onSelect={() => void props.actions.pin(session(), !pinned())} data-action="okucode-chat-pin">
+              <ItemLabel icon="pin">{pinned() ? "Unpin" : "Pin"}</ItemLabel>
+            </Menu.Item>
+            <Menu.Item onSelect={() => void props.actions.lock(session(), !locked())} data-action="okucode-chat-lock">
+              <ItemLabel icon="lock">{locked() ? "Unlock chat" : "Lock chat"}</ItemLabel>
+            </Menu.Item>
+            <Menu.Separator />
+            <Menu.Sub gutter={0} overlap>
+              <Menu.SubTrigger data-action="okucode-chat-share">
+                <ItemLabel icon="share">Share</ItemLabel>
+              </Menu.SubTrigger>
+              <Menu.Portal>
+                <Menu.SubContent class="w-[200px]">
+                  <Menu.Item onSelect={() => void props.actions.copyLink(session())} data-action="okucode-chat-copy-link">
+                    <ItemLabel icon="link">Copy link</ItemLabel>
+                  </Menu.Item>
+                  <Menu.Item onSelect={props.download} data-action="okucode-chat-download">
+                    <ItemLabel icon="download">Download chat</ItemLabel>
+                  </Menu.Item>
+                </Menu.SubContent>
+              </Menu.Portal>
+            </Menu.Sub>
+            <Menu.Separator />
+            <Menu.Item onSelect={() => void props.actions.archive(session())} disabled={locked()} data-action="okucode-chat-archive">
+              <ItemLabel icon="archive">Archive</ItemLabel>
+            </Menu.Item>
+            <Menu.Item onSelect={props.remove} disabled={locked()} data-action="okucode-chat-delete">
+              <ItemLabel icon="trash" danger={!locked()}>
+                Delete
+              </ItemLabel>
+            </Menu.Item>
+            <Menu.Separator />
+            <Menu.Sub gutter={0} overlap>
+              <Menu.SubTrigger disabled={locked()} data-action="okucode-chat-move">
+                <ItemLabel icon="folder">Move to project</ItemLabel>
+              </Menu.SubTrigger>
+              <Menu.Portal>
+                <Menu.SubContent class="max-h-[min(360px,calc(100dvh-48px))] w-[240px] overflow-y-auto">
+                  <For each={props.projects} fallback={<Menu.Item disabled>No projects yet</Menu.Item>}>
+                    {(project) => (
+                      <Menu.Item
+                        disabled={project.worktree === session().location.directory}
+                        onSelect={() => void props.actions.move(session(), project.worktree)}
+                        data-project={folderName(project.worktree)}
+                      >
+                        <span class="truncate" title={project.worktree}>
+                          {folderName(project.worktree)}
+                        </span>
+                      </Menu.Item>
+                    )}
+                  </For>
+                </Menu.SubContent>
+              </Menu.Portal>
+            </Menu.Sub>
+          </Menu.Context.Content>
+        </Menu.Context.Portal>
+      </Menu.Context>
+    </Show>
   )
 }
 
@@ -88,6 +223,8 @@ export function OkuCodeSidebar() {
   const home = createHomeController()
   const projects = createHomeProjectsController(home)
   const sessions = createHomeSessionsController(home)
+  const actions = createChatActions(home)
+  const dialog = useDialog()
   const platform = usePlatform()
   const [collapsed, setCollapsed] = createSignal(readCollapsed())
   const [menuOpen, setMenuOpen] = createSignal(false)
@@ -117,6 +254,41 @@ export function OkuCodeSidebar() {
     const conn = server()
     if (conn) sessions.session.showDelete(ServerConnection.key(conn), record.session)
   }
+  const download = (record: HomeSessionRecord) => {
+    const conn = server()
+    if (conn) void sessions.session.export(ServerConnection.key(conn), record.session)
+  }
+  const openArchived = () => {
+    setMenuOpen(false)
+    const api = home.server.focusedContext()?.sdk.api
+    if (!api) return
+    dialog.show(() => (
+      <ArchivedChats
+        api={api}
+        onChanged={() => void actions.refresh()}
+        onDelete={(session) => {
+          const conn = server()
+          if (conn) sessions.session.showDelete(ServerConnection.key(conn), session)
+        }}
+      />
+    ))
+  }
+  // Pinned chats sit above Today / Yesterday / Older.
+  const pinned = createMemo(() => sessions.data.groups().flatMap((group) => group.sessions.filter((record) => isPinned(record.session))))
+  const groups = createMemo(() =>
+    sessions.data.groups().map((group) => ({ ...group, sessions: group.sessions.filter((record) => !isPinned(record.session)) })),
+  )
+  const chatRow = (record: HomeSessionRecord) => (
+    <ChatRow
+      record={record}
+      active={isOpen(record)}
+      open={() => sessions.session.open(record.session)}
+      remove={() => removeChat(record)}
+      actions={actions}
+      projects={home.project.list()}
+      download={() => download(record)}
+    />
+  )
   const isOpen = (record: HomeSessionRecord) => location.pathname.endsWith(`/session/${record.session.id}`)
   // Signed-in person (Google account or the owner with the server password).
   const [me] = createResource(
@@ -231,6 +403,10 @@ export function OkuCodeSidebar() {
               )}
             </For>
             <div class="my-1.5 border-t border-v2-border-border-muted" />
+            <button type="button" class={row} onClick={openArchived} data-action="okucode-archived-chats">
+              <Icon path={ICONS.archive} />
+              Archived chats
+            </button>
             <button type="button" class={row} onClick={() => openSettings()}>
               <Icon path={ICONS.settings} />
               Settings
@@ -271,20 +447,28 @@ export function OkuCodeSidebar() {
           <Show
             when={query().trim()}
             fallback={
-              <For each={sessions.data.groups()} fallback={<span class="px-2.5 text-[13px] text-v2-text-text-faint">No chats yet</span>}>
-                {(group) => (
-                  <Show when={group.sessions.length > 0}>
-                    <div class="mb-2">
-                      <div class="px-2.5 pb-1 pt-2 text-[12px] font-medium text-v2-text-text-faint">{group.title}</div>
-                      <For each={group.sessions}>{(record) => <ChatRow record={record} active={isOpen(record)} open={() => sessions.session.open(record.session)} remove={() => removeChat(record)} />}</For>
-                    </div>
-                  </Show>
-                )}
-              </For>
+              <>
+                <Show when={pinned().length > 0}>
+                  <div class="mb-2" data-slot="okucode-pinned-chats">
+                    <div class="px-2.5 pb-1 pt-2 text-[12px] font-medium text-v2-text-text-faint">Pinned</div>
+                    <For each={pinned()}>{chatRow}</For>
+                  </div>
+                </Show>
+                <For each={groups()} fallback={<span class="px-2.5 text-[13px] text-v2-text-text-faint">No chats yet</span>}>
+                  {(group) => (
+                    <Show when={group.sessions.length > 0}>
+                      <div class="mb-2">
+                        <div class="px-2.5 pb-1 pt-2 text-[12px] font-medium text-v2-text-text-faint">{group.title}</div>
+                        <For each={group.sessions}>{chatRow}</For>
+                      </div>
+                    </Show>
+                  )}
+                </For>
+              </>
             }
           >
             <For each={found()} fallback={<span class="px-2.5 text-[13px] text-v2-text-text-faint">No chats found</span>}>
-              {(record) => <ChatRow record={record} active={isOpen(record)} open={() => sessions.session.open(record.session)} remove={() => removeChat(record)} />}
+              {chatRow}
             </For>
           </Show>
         </div>
