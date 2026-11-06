@@ -44,6 +44,12 @@ In Full-auto mode OkuCode runs the agent's commands in a sandbox. To use Docker 
 sandbox, start Docker Desktop, run `okucode sandbox-image` once, then choose **Docker** in Settings → Team →
 Sandbox for Full-auto. Add the tools your team needs to `okutobus/sandbox/Dockerfile` and run the command again.
 
+## Team model gateway (optional)
+
+To use the team's models on the GPU server instead of the models on this computer, get the gateway address and key
+from your admin, then run `okucode gateway connect <address> <key>`. Setting up the gateway itself:
+okutobus/gateway/README.md.
+
 ## Where things are
 
 - OkuCode: `~/.okucode/app` · its Bun: `~/.okucode/bun` · install log: `~/.okucode/install.log`

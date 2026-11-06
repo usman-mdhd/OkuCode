@@ -7,6 +7,7 @@
 #   okucode serve           API server only (see `okucode serve --help`)
 #   okucode update          update OkuCode (installed with okutobus/install.sh)
 #   okucode sandbox-image   build the Docker sandbox image (FR-25)
+#   okucode gateway ...     the team model gateway (FR-45): setup, start, status, key, connect
 set -e
 SELF="$0"
 while [ -L "$SELF" ]; do
@@ -28,6 +29,53 @@ if [ "$1" = "sandbox-image" ]; then
   echo "okucode: building the sandbox image $IMAGE (a few minutes the first time)..."
   docker build -t "$IMAGE" "$ROOT/okutobus/sandbox" && echo "okucode: done. Choose Docker in Settings → Team → Sandbox for Full-auto."
   exit $?
+fi
+
+# okucode gateway: the team model gateway (FR-45, LiteLLM). See okutobus/gateway/README.md.
+if [ "$1" = "gateway" ]; then
+  shift
+  GW="$HOME/.okucode/gateway"
+  case "${1:-}" in
+    setup) shift; exec bash "$ROOT/okutobus/gateway/setup.sh" "$@" ;;
+    start)
+      shift
+      [ -x "$GW/venv/bin/litellm" ] || { echo "okucode: the gateway is not set up yet. Run: okucode gateway setup" >&2; exit 1; }
+      HOST=127.0.0.1; GWPORT=4000
+      while [ $# -gt 0 ]; do
+        case "$1" in
+          --host) HOST="${2:?}"; shift 2 ;;
+          --port) GWPORT="${2:?}"; shift 2 ;;
+          *) echo "okucode: unknown option $1 (use --host or --port)" >&2; exit 1 ;;
+        esac
+      done
+      set -a; . "$GW/gateway.env"; set +a
+      echo "okucode: gateway on http://$HOST:$GWPORT (models from $OKUCODE_MODEL_SERVER). Stop: Ctrl+C"
+      exec "$GW/venv/bin/litellm" --config "$GW/config.yaml" --host "$HOST" --port "$GWPORT"
+      ;;
+    status)
+      URL="${2:-http://127.0.0.1:4000}"
+      if curl -fsS -m 5 "$URL/health/liveliness" >/dev/null 2>&1; then echo "okucode: the gateway at $URL is running"; else echo "okucode: no gateway answering at $URL" >&2; exit 1; fi
+      exit 0
+      ;;
+    key)
+      [ -s "$GW/gateway.env" ] || { echo "okucode: no key yet. Run: okucode gateway setup" >&2; exit 1; }
+      sed -n 's/^OKUCODE_GATEWAY_KEY=//p' "$GW/gateway.env"
+      exit 0
+      ;;
+    connect)
+      shift
+      [ -f "$PRELOAD" ] || { echo "okucode: dependencies missing. Run: (cd \"$ROOT\" && bun install)" >&2; exit 1; }
+      exec bun "$ROOT/okutobus/gateway/connect.ts" "$@"
+      ;;
+    *)
+      echo "okucode gateway setup [--models <address>] [--service]   install LiteLLM and make the key"
+      echo "okucode gateway start [--host 0.0.0.0] [--port 4000]      run the gateway"
+      echo "okucode gateway status [address]                        is it running?"
+      echo "okucode gateway key                                     show the key"
+      echo "okucode gateway connect <address> <key>                 use the gateway in OkuCode on this computer"
+      [ -z "${1:-}" ] && exit 0 || exit 1
+      ;;
+  esac
 fi
 
 # okucode update: get the latest version (or, for your own clone, reinstall its packages and rebuild).

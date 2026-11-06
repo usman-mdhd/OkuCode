@@ -1,0 +1,60 @@
+# OkuCode model gateway (FR-45): one OpenAI-compatible address for the whole team, in front of the model servers.
+# OkuCode on every laptop talks to the gateway; the gateway talks to Ollama or vLLM on the GPU server.
+#
+# Team names (what OkuCode sees)  ->  real model on the GPU server
+#   okucode-main   the main coding model (Qwen2.5-Coder 14B, 16k context)
+#   okucode-7b     a lighter model, used automatically when okucode-main fails or is busy
+#   okucode-small  chat titles and summaries (Qwen2.5-Coder 3B)
+#
+# To serve a model from vLLM instead of Ollama, change its api_base to the vLLM address (for example
+# http://127.0.0.1:8000/v1) and its model to "openai/<the name vLLM serves>". OkuCode needs no change.
+# A paid model can be added the same way (for example model: anthropic/claude-sonnet-4-5 with
+# api_key: os.environ/ANTHROPIC_API_KEY); keys stay on the server, never on the laptops.
+
+model_list:
+  - model_name: okucode-main
+    litellm_params:
+      model: openai/qwen2.5-coder-14b-16k
+      api_base: os.environ/OKUCODE_MODEL_SERVER
+      api_key: none
+      rpm: 120
+    model_info:
+      max_input_tokens: 16384
+      max_output_tokens: 4096
+
+  - model_name: okucode-7b
+    litellm_params:
+      model: openai/qwen2.5-coder-7b-16k
+      api_base: os.environ/OKUCODE_MODEL_SERVER
+      api_key: none
+      rpm: 120
+    model_info:
+      max_input_tokens: 16384
+      max_output_tokens: 4096
+
+  - model_name: okucode-small
+    litellm_params:
+      model: openai/qwen2.5-coder:3b
+      api_base: os.environ/OKUCODE_MODEL_SERVER
+      api_key: none
+      rpm: 300
+    model_info:
+      max_input_tokens: 4096
+      max_output_tokens: 2048
+
+router_settings:
+  # If okucode-main errors or is overloaded, the same request goes to okucode-7b.
+  fallbacks:
+    - okucode-main: ["okucode-7b"]
+  num_retries: 1
+  timeout: 600
+
+litellm_settings:
+  drop_params: true
+  # One line of JSON per request in the gateway log (model, tokens, time; never the prompt text).
+  json_logs: true
+  turn_off_message_logging: true
+
+general_settings:
+  # Every request needs this key (Authorization: Bearer <key>). setup.sh makes one and keeps it in ~/.okucode/gateway/gateway.env.
+  master_key: os.environ/OKUCODE_GATEWAY_KEY
