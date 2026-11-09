@@ -211,6 +211,9 @@ put(data.agent, "plan", { disable: true }, "plan agent off")
 put(data, "default_agent", "okucode")
 data.permission ??= {}
 put(data.permission, "skill", "allow", "skills allowed")
+// FR-04: the to-do list the agent keeps for longer tasks.
+data.experimental ??= {}
+put(data.experimental, "todo", true, "to-do list")
 if (added.length && fs.existsSync(path)) fs.copyFileSync(path, path + ".backup-" + new Date().toISOString().slice(0, 19).replace(/[-:T]/g, ""))
 if (added.length) fs.writeFileSync(path, JSON.stringify(data, null, 2) + "\n")
 console.log(added.length ? "    added: " + added.join(", ") : "    settings already complete, nothing changed")
