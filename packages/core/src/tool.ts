@@ -16,6 +16,7 @@ import { SessionMessage } from "./session/message.js"
 import { SessionSchema } from "./session/schema.js"
 import { State } from "./state.js"
 import { OkuAudit } from "./okutobus/audit.js"
+import { OkuInjection } from "./okutobus/injection.js"
 import { definition, effectiveName, execute, normalizedName, normalizeContent } from "./tool/runtime.js"
 import { Wildcard } from "./util/wildcard.js"
 
@@ -159,7 +160,12 @@ const layer = Layer.effect(
         },
       }
       yield* hooks.trigger("tool", "execute.after", afterEvent)
-      const afterContent = yield* normalizeImages(normalizeContent(afterEvent.result.content, afterEvent.result.output))
+      const normalizedContent = yield* normalizeImages(normalizeContent(afterEvent.result.content, afterEvent.result.output))
+      // Okutobus (OkuCode) FR-28: a result that looks like instructions to the AI gets a warning first.
+      const guarded = OkuInjection.guard(name, normalizedContent)
+      if (guarded)
+        OkuAudit.record("tool", { tool: name, injectionGuard: guarded.finding.reasons }, { sessionID: context.sessionID })
+      const afterContent = guarded?.content ?? normalizedContent
       return {
         ...(afterEvent.result.output === undefined ? {} : { output: afterEvent.result.output }),
         content: afterContent,

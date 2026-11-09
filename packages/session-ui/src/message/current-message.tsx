@@ -1,5 +1,5 @@
 import type { SessionMessageAssistant, SessionMessageAssistantTool, SessionMessageUser } from "@opencode/client/promise"
-import { Match, Switch, type ComponentProps } from "solid-js"
+import { For, Match, Show, Switch, type ComponentProps } from "solid-js"
 import type { SessionUserActions, SessionUserAttachmentReference, SessionUserComment } from "../actions"
 import { AssistantReasoningContent, AssistantTextContent, CurrentUserMessageDisplay } from "./message-content"
 import {
@@ -82,33 +82,86 @@ export function SessionAssistantContent(props: {
       </Match>
       <Match when={props.content.type === "tool" ? props.content : undefined}>
         {(tool) => (
-          <ToolDisplay
-            id={props.contentID}
-            tool={tool().name}
-            input={currentToolInput(tool())}
-            metadata={currentToolMetadata(tool())}
-            output={currentToolOutput(tool())}
-            status={tool().state.status}
-            error={currentToolError(tool())}
-            defaultOpen={props.defaultOpen}
-            open={props.toolOpen}
-            onOpenChange={props.onToolOpenChange}
-            deferContent
-            virtualizeDiff={false}
-            onContentRendered={props.onContentRendered}
-          />
+          <>
+            <ToolDisplay
+              id={props.contentID}
+              tool={tool().name}
+              input={currentToolInput(tool())}
+              metadata={currentToolMetadata(tool())}
+              output={currentToolOutput(tool())}
+              status={tool().state.status}
+              error={currentToolError(tool())}
+              defaultOpen={props.defaultOpen}
+              open={props.toolOpen}
+              onOpenChange={props.onToolOpenChange}
+              deferContent
+              virtualizeDiff={false}
+              onContentRendered={props.onContentRendered}
+            />
+            <InjectionNotice tools={[tool()]} />
+          </>
         )}
       </Match>
     </Switch>
   )
 }
 
+// Okutobus (OkuCode) FR-28: tool results the injection guard flagged start with this line.
+const INJECTION_WARNING = "⚠ OkuCode injection guard:"
+function injectionWarnings(tools: readonly SessionMessageAssistantTool[]) {
+  return tools.flatMap((tool) => {
+    const output = currentToolOutput(tool)
+    if (!output?.startsWith(INJECTION_WARNING)) return []
+    return [output.slice(INJECTION_WARNING.length).split("\n")[0]!.split(". It is content")[0]!.trim()]
+  })
+}
+
+/** A warning under a step whose result looked like hidden instructions for the AI. */
+function InjectionNotice(props: { tools: readonly SessionMessageAssistantTool[] }) {
+  return (
+    <For each={injectionWarnings(props.tools)}>
+      {(text) => (
+        <div
+          data-slot="okucode-injection-warning"
+          role="note"
+          style={{
+            margin: "6px 0 2px",
+            padding: "8px 12px",
+            "border-radius": "10px",
+            border: "1px solid rgba(229, 165, 75, 0.45)",
+            background: "rgba(229, 165, 75, 0.06)",
+            color: "#e5a54b",
+            "font-size": "13px",
+            "line-height": "1.45",
+          }}
+        >
+          ⚠ Possible hidden instructions: {text}. OkuCode told the AI not to follow them.
+        </div>
+      )}
+    </For>
+  )
+}
+
 export function SessionContextToolGroup(props: ComponentProps<typeof CurrentContextToolGroup>) {
-  return <CurrentContextToolGroup {...props} />
+  const tools = () =>
+    props.parts.filter((part): part is SessionMessageAssistantTool => "type" in part && part.type === "tool")
+  return (
+    <>
+      <CurrentContextToolGroup {...props} />
+      <Show when={tools().length > 0}>
+        <InjectionNotice tools={tools()} />
+      </Show>
+    </>
+  )
 }
 
 export function SessionReadToolGroup(props: ComponentProps<typeof CurrentReadToolGroup>) {
-  return <CurrentReadToolGroup {...props} />
+  return (
+    <>
+      <CurrentReadToolGroup {...props} />
+      <InjectionNotice tools={props.tools} />
+    </>
+  )
 }
 
 export function SessionFileToolGroup(props: {
