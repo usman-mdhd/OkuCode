@@ -555,6 +555,7 @@ export function createAccounts(input: {
         sandbox: SANDBOXES.includes(value.sandbox as Sandbox) ? value.sandbox : "auto",
         sandboxImage: value.sandboxImage || "okucode-sandbox",
         dockerReady: dockerReady(value.sandboxImage || "okucode-sandbox"),
+        fallbackModels: value.fallbackModels ?? [],
       })
     }
 
@@ -744,7 +745,14 @@ export function createAccounts(input: {
     }
 
     if (path === "/okucode/api/policy" && request.method === "PUT") {
-      const next = await body<{ approvalMode?: string; autoTest?: boolean; routing?: boolean; teamRules?: string; sandbox?: string }>(request)
+      const next = await body<{
+        approvalMode?: string
+        autoTest?: boolean
+        routing?: boolean
+        teamRules?: string
+        sandbox?: string
+        fallbackModels?: unknown
+      }>(request)
       const value = settings()
       if (next.approvalMode !== undefined) {
         if (next.approvalMode !== "ask" && next.approvalMode !== "auto-edit" && next.approvalMode !== "full-auto")
@@ -756,6 +764,12 @@ export function createAccounts(input: {
       if (next.sandbox !== undefined) {
         if (!SANDBOXES.includes(next.sandbox as Sandbox)) return json(400, { error: "Sandbox must be auto, docker, on or off." })
         value.sandbox = next.sandbox
+      }
+      if (next.fallbackModels !== undefined) {
+        const list = Array.isArray(next.fallbackModels) ? next.fallbackModels : []
+        if (!Array.isArray(next.fallbackModels) || list.length > 10 || list.some((item) => typeof item !== "string" || !/^[^/\s]+\/\S+$/.test(item.trim())))
+          return json(400, { error: 'Backup models must be up to 10 names like "ollama/qwen2.5-coder-7b-16k".' })
+        value.fallbackModels = [...new Set(list.map((item) => (item as string).trim()))]
       }
       if (typeof next.teamRules === "string") {
         if (next.teamRules.length > 20000) return json(400, { error: "Team rules are too long (20,000 characters at most)." })

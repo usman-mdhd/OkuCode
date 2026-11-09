@@ -32,6 +32,8 @@ import { Plugin } from "../../plugin.js"
 import { MAX_STEPS_PROMPT } from "./max-steps.js"
 import { OkuNudge } from "../../okutobus/nudge.js"
 import { OkuTestLoop } from "../../okutobus/test-loop.js"
+import { OkuFallback } from "../../okutobus/fallback.js"
+import { Model } from "@opencode/schema/model"
 
 /** Okutobus (OkuCode): chats where automatic compaction just failed, until when it is paused. */
 const autoCompactionFailed = new Map<string, number>()
@@ -213,6 +215,9 @@ const layer = Layer.effect(
       let initial: SessionContext.Loaded | undefined = first
       let recoverOverflow = true
       let recoverContinuation = true
+      // Okutobus (OkuCode) FR-47: models that failed in this answer, and the notice for the switch to the next one.
+      const failedModels = new Set<string>()
+      let fallbackNotice: string | undefined
       while (true) {
         // Reuse boundary preparation once; retries refresh context without delivering more input.
         const loaded = initial ?? (yield* prepareContext(sessionID).pipe(Effect.flatMap(context.load)))
@@ -261,13 +266,46 @@ const layer = Layer.effect(
           model: loaded.model,
           prepared,
           retry: (cause, error, proposed) =>
-            retry.decide({
-              cause,
-              error,
-              agent: loaded.agent.id,
-              model: loaded.model.ref,
-              hook: prepared.retry,
-              retry: proposed,
+            Effect.gen(function* () {
+              // Okutobus (OkuCode) FR-47: when the model cannot answer, switch the chat to the next fallback model.
+              const fallBack = Effect.gen(function* () {
+                const current = OkuFallback.ref(loaded.model.ref)
+                failedModels.add(current)
+                let candidate = OkuFallback.next(current, failedModels)
+                while (candidate) {
+                  const target = Model.Ref.parse(candidate)
+                  const usable = yield* context
+                    .resolveModel({ ...loaded.session, model: target })
+                    .pipe(Effect.as(true), Effect.orElseSucceed(() => false))
+                  if (usable) {
+                    yield* bus.publish(SessionEvent.ModelSelected, { sessionID, model: target, previous: loaded.session.model })
+                    yield* Effect.logWarning("model failed; switched to the fallback model", { sessionID, from: current, to: candidate })
+                    fallbackNotice = OkuFallback.notice(current, candidate, error.message)
+                    return { retry: true as const, attempt: failedModels.size, delay: 1500 }
+                  }
+                  failedModels.add(candidate)
+                  candidate = OkuFallback.next(current, failedModels)
+                }
+                return undefined
+              })
+              const kind = OkuFallback.when(cause.reason)
+              if (kind === "now") {
+                const switched = yield* fallBack
+                if (switched) return switched
+              }
+              const decision = yield* retry.decide({
+                cause,
+                error,
+                agent: loaded.agent.id,
+                model: loaded.model.ref,
+                hook: prepared.retry,
+                retry: proposed,
+              })
+              if (!decision.retry && kind === "after-retries") {
+                const switched = yield* fallBack
+                if (switched) return switched
+              }
+              return decision
             }),
           recoverContinuation,
           recoverOverflow: Effect.suspend(() =>
@@ -303,12 +341,15 @@ const layer = Layer.effect(
             assistantMessageID = SessionMessage.ID.create()
             return undefined
           }),
-          Retry: (outcome) =>
-            retry.wait({
+          Retry: (outcome) => {
+            const notice = fallbackNotice
+            fallbackNotice = undefined
+            return retry.wait({
               decision: outcome.decision,
-              error: outcome.error,
+              error: notice ? { ...outcome.error, type: "okucode.fallback", message: notice } : outcome.error,
               assistantMessageID,
-            }),
+            })
+          },
           Continue: Effect.fnUntraced(function* (outcome) {
             yield* retry.wait({
               decision: outcome.decision,

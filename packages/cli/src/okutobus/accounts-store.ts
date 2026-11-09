@@ -60,6 +60,8 @@ export type Settings = {
   /** FR-58: false stops usage metering; price per million tokens for the "equivalent API cost". */
   usage?: boolean
   usagePrice?: { input?: number; output?: number; cacheRead?: number }
+  /** FR-47: backup models ("provider/model"), tried in order when a chat's model cannot answer (read by core's OkuFallback). */
+  fallbackModels?: string[]
   /** FR-59: monthly limit per person (see budget.ts). */
   budget?: { unit?: "tokens" | "usd"; default?: number; people?: Record<string, number> }
 }

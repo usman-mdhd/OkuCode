@@ -216,7 +216,7 @@ describe("OkuCode accounts", () => {
     // The policy applies to every chat: approval mode, auto-test, routing and team rules.
     expect((await t.call("GET", "/okucode/api/policy")).data).toEqual({
       approvalMode: null, autoTest: true, routing: false, smallModel: "ollama/qwen2.5-coder:3b", teamRules: "",
-      sandbox: "auto", sandboxImage: "okucode-sandbox", dockerReady: expect.any(Boolean),
+      sandbox: "auto", sandboxImage: "okucode-sandbox", dockerReady: expect.any(Boolean), fallbackModels: [],
     })
     // FR-25: the sandbox for Full-auto (this computer's, Docker or off).
     expect((await t.call("PUT", "/okucode/api/policy", { body: { sandbox: "box" } })).status).toBe(400)
@@ -313,6 +313,18 @@ describe("OkuCode accounts", () => {
     } finally {
       delete process.env.OKUCODE_USAGE_DIR
     }
+  })
+
+  test("admins set the backup models for the fallback chain (FR-47)", async () => {
+    const t = setup()
+    await t.call("POST", "/okucode/auth/password", { body: { password: PASSWORD } })
+    expect((await t.call("PUT", "/okucode/api/policy", { body: { fallbackModels: ["not a model"] } })).status).toBe(400)
+    const saved = await t.call("PUT", "/okucode/api/policy", {
+      body: { fallbackModels: [" ollama/qwen2.5-coder-7b-16k ", "gateway/okucode-main", "gateway/okucode-main"] },
+    })
+    expect(saved.status).toBe(200)
+    expect((await t.call("GET", "/okucode/api/policy")).data.fallbackModels).toEqual(["ollama/qwen2.5-coder-7b-16k", "gateway/okucode-main"])
+    expect(t.store.settings().fallbackModels).toEqual(["ollama/qwen2.5-coder-7b-16k", "gateway/okucode-main"])
   })
 
   test("budgets: a warning at 80%, new messages refused at 100%, admins change the limit (FR-59)", async () => {

@@ -37,6 +37,7 @@ type Policy = {
   sandbox: "auto" | "docker" | "on" | "off"
   sandboxImage: string
   dockerReady: boolean
+  fallbackModels: string[]
 }
 
 const SANDBOX_OPTIONS: { value: Policy["sandbox"]; label: string }[] = [
@@ -558,6 +559,34 @@ export const SettingsTeam: Component<{ me: Me }> = (props) => {
                         void savePolicy({ sandbox: option.value }, `Sandbox: ${option.label}`)
                       }
                     />
+                  </SettingsRow>
+                  <SettingsRow
+                    title="Backup models"
+                    description="If a chat's model is not running or keeps failing, OkuCode switches that chat to the first of these that works. Names like ollama/qwen2.5-coder-7b-16k, separated by commas."
+                  >
+                    <form
+                      class="flex items-center gap-2"
+                      onSubmit={(event) => {
+                        event.preventDefault()
+                        const field = event.currentTarget.elements.namedItem("fallback") as HTMLInputElement
+                        const list = field.value
+                          .split(",")
+                          .map((item) => item.trim())
+                          .filter(Boolean)
+                        void savePolicy({ fallbackModels: list }, list.length ? `Backup models: ${list.join(", ")}` : "Backup models off")
+                      }}
+                    >
+                      <input
+                        name="fallback"
+                        data-action="okucode-team-fallback"
+                        class={`${input.replace("w-full ", "")} w-64`}
+                        placeholder="None"
+                        value={current().fallbackModels.join(", ")}
+                      />
+                      <Button size="small" variant="ghost" type="submit">
+                        Save
+                      </Button>
+                    </form>
                   </SettingsRow>
                   <SettingsRow
                     title="Run tests after changes"
