@@ -8,7 +8,7 @@ import { message } from "../src/okutobus/smtp"
 
 const PASSWORD = "server-pass"
 
-function setup() {
+function setup(options: { clock?: { now: number } } = {}) {
   const dir = mkdtempSync(path.join(tmpdir(), "oku-accounts-"))
   const store = new Store({ data: path.join(dir, "data"), config: path.join(dir, "config") })
   const sent: { to: string; subject: string; text: string }[] = []
@@ -38,6 +38,7 @@ function setup() {
     store,
     password: PASSWORD,
     fetch: fetcher,
+    ...(options.clock ? { now: () => options.clock!.now } : {}),
     sendMail: async (mail) => {
       sent.push({ to: mail.to, subject: mail.subject, text: mail.text })
     },
@@ -309,6 +310,52 @@ describe("OkuCode accounts", () => {
       expect(usage.status).toBe(200)
       expect(usage.data.total).toMatchObject({ calls: 2, input: 200, output: 100 })
       expect(usage.data.byUser.map((row: { user: string }) => row.user).sort()).toEqual(["new@okutobus.com", "owner"])
+    } finally {
+      delete process.env.OKUCODE_USAGE_DIR
+    }
+  })
+
+  test("budgets: a warning at 80%, new messages refused at 100%, admins change the limit (FR-59)", async () => {
+    const clock = { now: Date.now() }
+    const t = setup({ clock })
+    const usageDir = mkdtempSync(path.join(tmpdir(), "oku-budget-"))
+    process.env.OKUCODE_USAGE_DIR = usageDir
+    try {
+      const { UsageLog } = await import("@opencode/util/usage-log")
+      const base = { provider: "ollama", model: "qwen", reasoning: 0, cacheRead: 0, cacheWrite: 0, cost: 0, ms: 1000 }
+      await t.call("POST", "/okucode/auth/password", { body: { password: PASSWORD } })
+      await t.call("POST", "/okucode/api/users", { body: { email: "new@okutobus.com", role: "member" } })
+      expect((await t.call("PUT", "/okucode/api/budget", { body: { unit: "tokens", default: -5 } })).status).toBe(400)
+      expect((await t.call("PUT", "/okucode/api/budget", { body: { unit: "tokens", default: 1000 } })).status).toBe(200)
+      // The owner (server password) never has a limit.
+      expect((await t.call("GET", "/okucode/budget")).data).toMatchObject({ limit: null, exceeded: false })
+
+      expect(t.store.settings().budget).toEqual({ unit: "tokens", default: 1000 })
+      await googleSignIn(t)
+      // (googleSignIn replaces the settings, so the budget is set again.)
+      t.store.saveSettings({ ...t.store.settings(), budget: { unit: "tokens", default: 1000 } })
+      expect(t.accounts.gate(t.request("POST", "/api/session/ses_b/prompt"))).toBeUndefined()
+      expect((await t.call("GET", "/okucode/budget")).data).toMatchObject({ unit: "tokens", limit: 1000, used: 0, warning: false })
+
+      UsageLog.record({ ...base, time: new Date(clock.now).toISOString(), sessionID: "ses_b", input: 700, output: 150 }, usageDir)
+      clock.now += 6000
+      expect((await t.call("GET", "/okucode/budget")).data).toMatchObject({ used: 850, warning: true, exceeded: false })
+      expect(t.accounts.gate(t.request("POST", "/api/session/ses_b/prompt"))).toBeUndefined()
+
+      UsageLog.record({ ...base, time: new Date(clock.now).toISOString(), sessionID: "ses_b", input: 100, output: 100 }, usageDir)
+      clock.now += 6000
+      const refused = t.accounts.gate(t.request("POST", "/api/session/ses_b/prompt"))!
+      expect(refused.status).toBe(429)
+      expect(JSON.parse(refused.body!)).toMatchObject({ _tag: "BudgetExceededError", budget: { used: 1050, limit: 1000, exceeded: true } })
+      // Other requests (reading the chat) still work.
+      expect(t.accounts.gate(t.request("GET", "/api/session/ses_b/message"))).toBeUndefined()
+      // Members cannot raise their own limit.
+      expect((await t.call("PUT", "/okucode/api/budget", { body: { default: 0 } })).status).toBe(403)
+
+      // An admin gives this person more: messages work again.
+      t.store.saveSettings({ ...t.store.settings(), budget: { unit: "tokens", default: 1000, people: { "new@okutobus.com": 5000 } } })
+      clock.now += 6000
+      expect(t.accounts.gate(t.request("POST", "/api/session/ses_b/prompt"))).toBeUndefined()
     } finally {
       delete process.env.OKUCODE_USAGE_DIR
     }

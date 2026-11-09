@@ -20,6 +20,7 @@ import { NEW_SESSION_CONTENT_WIDTH } from "@/new-session/layout"
 import { Persist, persisted } from "@/runtime/persistence/storage"
 import { Persistence } from "@/runtime/persistence/schema"
 import type { NewSessionWorkspaceController } from "./workspace/controller"
+import { BudgetNotice } from "@/okutobus/budget-notice"
 import { OkuGreeting, OkuSuggestions } from "@/okutobus/greeting"
 
 const providerTipDismissalDuration = 30 * 24 * 60 * 60 * 1000
@@ -70,7 +71,10 @@ export function NewSessionView(props: {
           </div>
           <div class={NEW_SESSION_CONTENT_WIDTH}>
             <div class="flex flex-col gap-3">
-              <Composer model={props.composer} />
+              <div>
+                <BudgetNotice />
+                <Composer model={props.composer} />
+              </div>
               <Show when={props.project.empty()}>
                 <PromptProjectAddButton controller={props.project} />
               </Show>

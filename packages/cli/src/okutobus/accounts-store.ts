@@ -60,6 +60,8 @@ export type Settings = {
   /** FR-58: false stops usage metering; price per million tokens for the "equivalent API cost". */
   usage?: boolean
   usagePrice?: { input?: number; output?: number; cacheRead?: number }
+  /** FR-59: monthly limit per person (see budget.ts). */
+  budget?: { unit?: "tokens" | "usd"; default?: number; people?: Record<string, number> }
 }
 
 type File = { secret: string; users: User[] }

@@ -35,6 +35,7 @@ import type { Region } from "@/runtime/extension/panels"
 import { SessionLocationMissing } from "./location-missing"
 import { PlanApprovalBar } from "@/okutobus/plan-approval"
 import { isLocked, LockedChatBar } from "@/okutobus/chat-actions"
+import { BudgetNotice } from "@/okutobus/budget-notice"
 
 export function createActiveSessionRegion(input: {
   session: SessionModel
@@ -319,6 +320,7 @@ export function ActiveSessionComposerRegion(props: {
             <div class="relative">
               <SessionQueuePanel queue={props.model.queue} />
               <PlanApprovalBar session={props.session} adapter={props.model.adapter} composer={props.model.composer} />
+              <BudgetNotice />
               <div class="relative z-10">
                 {/* Okutobus: a locked chat shows a bar with Unlock instead of the message box. */}
                 <Show

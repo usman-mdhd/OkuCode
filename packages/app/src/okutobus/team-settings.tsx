@@ -5,6 +5,7 @@
 //   Sign-in Google sign-in and Gmail invite setup (admins only)
 //   Audit   FR-60 audit log: chain check, days kept, download (admins only)
 //   Usage   FR-58 tokens, GPU hours and cost per person and model (admins and team leads)
+//   Budgets FR-59 monthly limit per person (warning at 80%, messages paused at 100%)
 //   API keys FR-56 personal keys for scripts and CI ("Authorization: Bearer oku_..."), shown once when made
 import { Button } from "@opencode/ui/button"
 import { Select } from "@opencode/ui/select"
@@ -84,6 +85,20 @@ type Usage = {
   byDay: { day: string; totals: Totals }[]
 }
 
+type BudgetUnit = "tokens" | "usd"
+type Budgets = { unit: BudgetUnit; default: number; resetsOn: string; people: { email: string; limit: number | null; used: number }[] }
+const BUDGET_UNITS: { value: BudgetUnit; label: string }[] = [
+  { value: "tokens", label: "Tokens" },
+  { value: "usd", label: "Cost ($, same on an API)" },
+]
+// Tokens are typed in millions, cost in dollars.
+const toInput = (value: number | null, unit: BudgetUnit) =>
+  value === null || value === undefined ? "" : unit === "tokens" ? String(+(value / 1_000_000).toPrecision(6)) : String(value)
+const fromInput = (text: string, unit: BudgetUnit) => {
+  const value = Number(text.trim())
+  return text.trim() === "" || !Number.isFinite(value) ? null : unit === "tokens" ? Math.round(value * 1_000_000) : value
+}
+const budgetAmount = (value: number, unit: BudgetUnit) => (unit === "tokens" ? `${count(value)} tokens` : usd(value))
 type ApiKey = { id: string; name: string; email: string; prefix: string; createdAt: number; createdBy: string; lastUsed?: number }
 const when = (time?: number) => (time ? new Date(time).toLocaleString() : "never")
 
@@ -266,6 +281,35 @@ export const SettingsTeam: Component<{ me: Me }> = (props) => {
     () => ({ http: server(), days: usageDays() }),
     (input) => call<Usage>(input.http, `/okucode/api/usage?days=${input.days}`),
   )
+
+  // ---- budgets (FR-59) ----
+  const [budgets, { refetch: reloadBudgets }] = createResource(server, (http) => call<Budgets>(http, "/okucode/api/budget"))
+  const [budgetUnit, setBudgetUnit] = createSignal<BudgetUnit>()
+  const [budgetDefault, setBudgetDefault] = createSignal<string>()
+  const [budgetPeople, setBudgetPeople] = createSignal<Record<string, string>>({})
+  const unitNow = () => budgetUnit() ?? budgets()?.unit ?? "tokens"
+  const defaultNow = () => budgetDefault() ?? (budgets()?.default ? toInput(budgets()!.default, unitNow()) : "")
+  const personNow = (row: Budgets["people"][number]) => budgetPeople()[row.email] ?? toInput(row.limit, unitNow())
+  const saveBudgets = async () => {
+    const current = budgets()
+    if (!current) return
+    const unit = unitNow()
+    const people: Record<string, number> = {}
+    for (const row of current.people) {
+      const value = fromInput(personNow(row), unit)
+      if (value !== null) people[row.email] = value
+    }
+    try {
+      await call(server(), "/okucode/api/budget", "PUT", { unit, default: fromInput(defaultNow(), unit) ?? 0, people })
+      setBudgetUnit(undefined)
+      setBudgetDefault(undefined)
+      setBudgetPeople({})
+      await reloadBudgets()
+      done("Budgets saved")
+    } catch (error) {
+      failed(error)
+    }
+  }
 
   // ---- API keys (FR-56) ----
   const [keys, { refetch: reloadKeys }] = createResource(server, (http) =>
@@ -643,6 +687,95 @@ export const SettingsTeam: Component<{ me: Me }> = (props) => {
                   </div>
                 )}
               </For>
+            </Section>
+          )}
+        </Show>
+
+        {/* ---------- Budgets (FR-59; admins change them, team leads see them) ---------- */}
+        <Show when={budgets()}>
+          {(current) => (
+            <Section
+              title="Budgets"
+              description={`A monthly limit per person. At 80% they see a warning; at 100% new messages are paused until ${new Date(`${current().resetsOn}T00:00:00Z`).toLocaleDateString(undefined, { day: "numeric", month: "short", timeZone: "UTC" })} or until you raise the limit. Empty = no limit.`}
+            >
+              <div data-action="okucode-budgets" class="flex flex-col gap-3">
+                <SettingsList>
+                  <SettingsRow title="Count" description="Tokens in and out, or what the same tokens would cost on a paid API.">
+                    <Select
+                      data-action="okucode-budget-unit"
+                      options={BUDGET_UNITS}
+                      current={BUDGET_UNITS.find((option) => option.value === unitNow())}
+                      value={(option) => option.value}
+                      label={(option) => option.label}
+                      placement="bottom-end"
+                      disabled={!isAdmin()}
+                      onSelect={(option) => option && setBudgetUnit(option.value)}
+                    />
+                  </SettingsRow>
+                  <SettingsRow
+                    title="Monthly limit for everyone"
+                    description={unitNow() === "tokens" ? "In millions of tokens, for example 5 = 5M tokens." : "In dollars, for example 50."}
+                  >
+                    <input
+                      data-action="okucode-budget-default"
+                      class={`${input.replace("w-full ", "")} w-28 text-right`}
+                      inputMode="decimal"
+                      placeholder="No limit"
+                      value={defaultNow()}
+                      disabled={!isAdmin()}
+                      onInput={(event) => setBudgetDefault(event.currentTarget.value)}
+                    />
+                  </SettingsRow>
+                </SettingsList>
+                <table class="w-full text-12-regular">
+                  <thead class="text-v2-text-text-muted">
+                    <tr>
+                      <th class="w-2/5 py-1 text-left font-normal">Person</th>
+                      <th class="py-1 text-right font-normal">Used this month</th>
+                      <th class="py-1 text-right font-normal">Own limit</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <For each={current().people}>
+                      {(row) => {
+                        const limit = () => fromInput(personNow(row), unitNow()) ?? (fromInput(defaultNow(), unitNow()) || null)
+                        const share = () => (limit() ? row.used / limit()! : 0)
+                        return (
+                          <tr class="border-t border-v2-border-border-muted text-v2-text-text-base" data-budget-person={row.email}>
+                            <td class="max-w-0 truncate py-1.5" title={row.email}>
+                              {row.email}
+                            </td>
+                            <td
+                              class="py-1.5 text-right"
+                              style={share() >= 1 ? { color: "#f2555a" } : share() >= 0.8 ? { color: "#e5a54b" } : undefined}
+                            >
+                              {budgetAmount(row.used, current().unit)}
+                              <Show when={limit()}>{` (${Math.round(share() * 100)}%)`}</Show>
+                            </td>
+                            <td class="py-1.5 text-right">
+                              <input
+                                class={`${input.replace("w-full ", "")} ml-auto w-24 text-right`}
+                                inputMode="decimal"
+                                placeholder="Default"
+                                value={personNow(row)}
+                                disabled={!isAdmin()}
+                                onInput={(event) => setBudgetPeople({ ...budgetPeople(), [row.email]: event.currentTarget.value })}
+                              />
+                            </td>
+                          </tr>
+                        )
+                      }}
+                    </For>
+                  </tbody>
+                </table>
+                <Show when={isAdmin()}>
+                  <div>
+                    <Button size="small" variant="contrast" data-action="okucode-budget-save" onClick={() => void saveBudgets()}>
+                      Save budgets
+                    </Button>
+                  </div>
+                </Show>
+              </div>
             </Section>
           )}
         </Show>

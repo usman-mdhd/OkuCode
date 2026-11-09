@@ -16,6 +16,7 @@ import { spawnSync } from "node:child_process"
 import nodePath from "node:path"
 import { AuditChain } from "@opencode/util/audit-chain"
 import { UsageLog } from "@opencode/util/usage-log"
+import * as Budget from "./budget"
 
 export type Request = {
   method: string
@@ -175,6 +176,33 @@ export function createAccounts(input: {
   function settings() {
     const value = store.settings()
     return value
+  }
+
+  // FR-58 price per million tokens for "Same on an API".
+  function usagePrice(): UsageLog.Price {
+    const configured = settings().usagePrice ?? {}
+    return {
+      input: typeof configured.input === "number" ? configured.input : UsageLog.DEFAULT_PRICE.input,
+      output: typeof configured.output === "number" ? configured.output : UsageLog.DEFAULT_PRICE.output,
+      cacheRead: typeof configured.cacheRead === "number" ? configured.cacheRead : UsageLog.DEFAULT_PRICE.cacheRead,
+    }
+  }
+
+  // FR-59: what each person used this month. Read again at most every 5 seconds (it is checked on every message).
+  let monthCache: { at: number; key: string; used: Record<string, number> } | undefined
+  function usedThisMonth(): Record<string, number> {
+    const config = settings().budget
+    const unit = Budget.unitOf(config)
+    const from = Budget.monthStart(new Date(now()))
+    const key = `${from}|${unit}|${JSON.stringify(settings().usagePrice ?? {})}`
+    if (monthCache && monthCache.key === key && now() - monthCache.at < 5000) return monthCache.used
+    const used = Budget.usedByPerson(UsageLog.read(from), store.sessionUsers(), unit, usagePrice())
+    monthCache = { at: now(), key, used }
+    return used
+  }
+  function budgetView(email: string): Budget.View {
+    const config = email === OWNER ? undefined : settings().budget
+    return Budget.view(config, email, email === OWNER ? 0 : (usedThisMonth()[email] ?? 0), new Date(now()))
   }
 
   function publicUrl(request: Request) {
@@ -585,12 +613,7 @@ export function createAccounts(input: {
     if (path === "/okucode/api/usage" && request.method === "GET") {
       const days = Math.min(Math.max(Number(request.url.searchParams.get("days")) || 30, 1), 366)
       const from = new Date(Date.now() - days * 86_400_000).toISOString()
-      const configured = settings().usagePrice ?? {}
-      const price = {
-        input: typeof configured.input === "number" ? configured.input : UsageLog.DEFAULT_PRICE.input,
-        output: typeof configured.output === "number" ? configured.output : UsageLog.DEFAULT_PRICE.output,
-        cacheRead: typeof configured.cacheRead === "number" ? configured.cacheRead : UsageLog.DEFAULT_PRICE.cacheRead,
-      }
+      const price = usagePrice()
       return json(200, {
         days,
         price,
@@ -625,7 +648,32 @@ export function createAccounts(input: {
       })
     }
 
+    // FR-59: monthly budgets. Admins and team leads see them; only admins change them.
+    if (path === "/okucode/api/budget" && request.method === "GET") {
+      const config = settings().budget ?? {}
+      const used = usedThisMonth()
+      return json(200, {
+        unit: Budget.unitOf(config),
+        default: config.default ?? 0,
+        resetsOn: Budget.nextMonth(new Date(now())),
+        people: store.list().map((user) => ({
+          email: user.email,
+          limit: typeof config.people?.[user.email] === "number" ? config.people[user.email] : null,
+          used: used[user.email] ?? 0,
+        })),
+      })
+    }
+
     if (!sameOrigin(request)) return json(403, { error: "Request blocked." })
+
+    if (path === "/okucode/api/budget" && request.method === "PUT") {
+      if (!isAdmin) return adminOnly()
+      const parsed = Budget.parse(await body<unknown>(request), validEmail)
+      if (typeof parsed === "string") return json(400, { error: parsed })
+      store.saveSettings({ ...settings(), budget: parsed })
+      monthCache = undefined
+      return json(200, { ok: true })
+    }
 
     if (path === "/okucode/api/approval" && request.method === "PUT") {
       const next = await body<{ mode?: string }>(request)
@@ -858,6 +906,11 @@ export function createAccounts(input: {
         if (!password || !same(password, input.password)) return json(401, { error: "Wrong password." })
         return json(200, { ok: true }, signInCookies(request, OWNER))
       }
+      // FR-59: the signed-in person's own monthly budget (for the warning above the message box).
+      if (path === "/okucode/budget" && request.method === "GET") {
+        const me = currentUser(request)
+        return me ? json(200, budgetView(me.email)) : json(401, { error: "Not signed in." })
+      }
       if (path === "/okucode/me") {
         const me = currentUser(request)
         return me ? json(200, { ...publicView(me), owner: me.email === OWNER }) : json(401, { error: "Not signed in." })
@@ -934,6 +987,16 @@ export function createAccounts(input: {
           try {
             store.noteSession(decodeURIComponent(prompt[1]!), user.email)
           } catch {}
+          // FR-59: over the monthly budget, new messages are refused until next month or a higher limit.
+          if (user.email !== OWNER && !basicOwner(request)) {
+            const budget = budgetView(user.email)
+            if (budget.exceeded && budget.limit !== null)
+              return json(429, {
+                _tag: "BudgetExceededError",
+                message: `You have used your monthly OkuCode budget (${Budget.format(budget.used, budget.unit)} of ${Budget.format(budget.limit, budget.unit)}). It starts again on ${budget.resetsOn}, or an admin can raise it in Settings → Team → Budgets.`,
+                budget,
+              })
+          }
         }
       }
       // Only the API is checked; the page itself loads and then shows the sign-in screen.
