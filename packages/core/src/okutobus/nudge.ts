@@ -25,6 +25,12 @@ const REQUEST =
   /\b(?:add|create|make|write|generate|build|fix|edit|change|update|modify|refactor|implement|run|test|delete|remove|rename|install|save|convert|export|put|insert|append|replace|document|docx|word|pdf|file)\b/i
 const CONFIRM = /^\s*(?:yes|yeah|yep|ok|okay|sure|go ahead|do it|please do|proceed|continue)\b/i
 const FILE = /\b[\w.-]+\.(?:docx|pdf|odt|rtf|pptx|md|txt|html|py|js|ts|java|cs|sql|json|csv)\b/i
+// "add a multiply function to calc.py": a change to a named file. Not "show me" / "explain" / "an example".
+const CHANGE =
+  /\b(?:add|create|edit|update|fix|change|modify|write|implement|append|insert|refactor|rename|delete|remove)\b/i
+const ONLY_SHOW = /\b(?:show|explain|example|how\s+(?:do|to|would|can))\b/i
+// Text that copies a tool's result ("Todos updated: 2/2 completed") although no tool ran.
+const FAKE_RESULT = /\bTodos updated:|\b(?:File|Changes) (?:written|saved|applied)\b/i
 
 /** The reminder to send, or undefined. `messages` are the newest messages first. */
 export function decide(messages: readonly SessionMessage.Info[]): string | undefined {
@@ -32,11 +38,13 @@ export function decide(messages: readonly SessionMessage.Info[]): string | undef
   if (!latest || latest.type !== "assistant") return undefined
   if (latest.content.some((part) => part.type === "tool")) return undefined
   // At most one reminder per user message.
+  let request = ""
   for (const message of messages.slice(1)) {
     // A "# rule" message only needs a one-line confirmation ("I will use tabs"), never a tool call.
     if (message.type === "user") {
       if (OkuMemory.isConfirmation(message.text)) return undefined
       if (!REQUEST.test(message.text) && !CONFIRM.test(message.text)) return undefined
+      request = message.text
       break
     }
     if (message.type === "synthetic" && message.text === TEXT) return undefined
@@ -51,5 +59,7 @@ export function decide(messages: readonly SessionMessage.Info[]): string | undef
   // The announcement closes the reply; one in the middle of an explanation is not a promise to act now.
   const announced = ANNOUNCED.test(text.slice(-400))
   const pastedFile = /```/.test(text) && FILE.test(text) && /\b(?:document|file|docx|word)\b/i.test(text)
-  return announced || pastedFile ? TEXT : undefined
+  // The user asked to change a named file and the reply only shows the new code.
+  const shownChange = /```/.test(text) && FILE.test(request) && CHANGE.test(request) && !ONLY_SHOW.test(request)
+  return announced || pastedFile || shownChange || FAKE_RESULT.test(text) ? TEXT : undefined
 }

@@ -16,7 +16,21 @@ describe("Okutobus nudge", () => {
   })
 
   test("reminds when the model pasted the file content instead of saving it", () => {
-    expect(OkuNudge.decide([assistant("Here is the document LLM.docx:\n```markdown\n# LLM\n```"), user()])).toBe(OkuNudge.TEXT)
+    expect(OkuNudge.decide([assistant("Here is the document LLM.docx:\n```markdown\n# LLM\n```"), user()])).toBe(
+      OkuNudge.TEXT,
+    )
+  })
+
+  test("reminds when the user asked to change a named file and the reply only shows the code", () => {
+    const shown = assistant(
+      "Step 1: Add the `multiply` function to `calc.py`\n```python\ndef multiply(a, b):\n    return a * b\n```\nUpdated To-Do List\nTodos updated: 2/2 completed, 0 pending",
+    )
+    expect(
+      OkuNudge.decide([shown, user("Make a to-do list, then add a multiply function to calc.py and a test for it")]),
+    ).toBe(OkuNudge.TEXT)
+    // Asking to be shown is not asking for a change.
+    const example = assistant("```python\ndef multiply(a, b):\n    return a * b\n```")
+    expect(OkuNudge.decide([example, user("show me how to add a multiply function to calc.py")])).toBeUndefined()
   })
 
   test("leaves normal answers and real tool calls alone", () => {
@@ -32,7 +46,7 @@ describe("Okutobus nudge", () => {
   })
   test("no reminder after a plain question, even when the answer ends with 'let me know' or talks about creating", () => {
     const answer = assistant(
-      "Here is another example: a blog API for creating, updating and deleting posts.\n```json\n{\"id\": 1}\n```\nIf you need an example in a specific language, let me know!",
+      'Here is another example: a blog API for creating, updating and deleting posts.\n```json\n{"id": 1}\n```\nIf you need an example in a specific language, let me know!',
     )
     expect(OkuNudge.decide([answer, user("give me another example")])).toBeUndefined()
     expect(OkuNudge.decide([assistant("I'll create the report now."), user("what is a REST API?")])).toBeUndefined()
@@ -40,7 +54,9 @@ describe("Okutobus nudge", () => {
   })
 
   test("still reminds after a request or a yes to an offer", () => {
-    expect(OkuNudge.decide([assistant("Sure, I will now create the Word file."), user("make a word file about REST")])).toBe(OkuNudge.TEXT)
+    expect(
+      OkuNudge.decide([assistant("Sure, I will now create the Word file."), user("make a word file about REST")]),
+    ).toBe(OkuNudge.TEXT)
     expect(OkuNudge.decide([assistant("Okay, I'll save it as notes.docx."), user("yes")])).toBe(OkuNudge.TEXT)
   })
 })
