@@ -8,6 +8,7 @@
 #   okucode update          update OkuCode (installed with okutobus/install.sh)
 #   okucode sandbox-image   build the Docker sandbox image (FR-25)
 #   okucode gateway ...     the team model gateway (FR-45): setup, start, status, key, connect
+#   okucode review ...      review this branch's changes, or post the review on a GitHub pull request (FR-32)
 set -e
 SELF="$0"
 while [ -L "$SELF" ]; do
@@ -29,6 +30,12 @@ if [ "$1" = "sandbox-image" ]; then
   echo "okucode: building the sandbox image $IMAGE (a few minutes the first time)..."
   docker build -t "$IMAGE" "$ROOT/okutobus/sandbox" && echo "okucode: done. Choose Docker in Settings → Team → Sandbox for Full-auto."
   exit $?
+fi
+
+# okucode review: review this branch's changes with the team's model (FR-32; FR-55 runs it in GitHub Actions).
+if [ "$1" = "review" ]; then
+  shift
+  exec bun "$ROOT/okutobus/review/review.ts" "$@"
 fi
 
 # okucode gateway: the team model gateway (FR-45, LiteLLM). See okutobus/gateway/README.md.

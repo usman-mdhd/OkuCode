@@ -1,0 +1,23 @@
+# Copy to .github/workflows/okucode-review.yml in the repository to review.
+# Add two repository secrets first (Settings → Secrets and variables → Actions):
+#   OKUCODE_GATEWAY_URL  the gateway address, e.g. https://okucode-gateway.example.com
+#   OKUCODE_GATEWAY_KEY  the key from `okucode gateway key`
+name: OkuCode review
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+permissions:
+  contents: read
+  pull-requests: write
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: OKUTOBUS-TECH/okucode/okutobus/github-action@develop
+        with:
+          gateway-url: ${{ secrets.OKUCODE_GATEWAY_URL }}
+          gateway-key: ${{ secrets.OKUCODE_GATEWAY_KEY }}
+          # fail-on: high

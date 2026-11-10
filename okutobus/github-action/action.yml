@@ -1,0 +1,38 @@
+# OkuCode SRS FR-55: review every pull request with OkuCode (FR-32), using the team's model gateway (FR-45).
+# Use it from a workflow in any repository (see example-workflow.yml next to this file):
+#   - uses: OKUTOBUS-TECH/okucode/okutobus/github-action@develop
+#     with: { gateway-url: ${{ secrets.OKUCODE_GATEWAY_URL }}, gateway-key: ${{ secrets.OKUCODE_GATEWAY_KEY }} }
+name: OkuCode review
+description: Reviews the pull request's changes with OkuCode and posts the review as a comment.
+inputs:
+  gateway-url:
+    description: The OkuCode model gateway (or any OpenAI-compatible address), e.g. https://okucode-gateway.example.com
+    required: true
+  gateway-key:
+    description: The gateway key
+    required: true
+  model:
+    description: The model name on the gateway
+    default: okucode-main
+  fail-on:
+    description: Fail the check when the review finds a problem of this severity or worse (high, medium, low); empty never fails
+    default: ""
+runs:
+  using: composite
+  steps:
+    - uses: oven-sh/setup-bun@v2
+      with:
+        bun-version: 1.4.3
+    - name: OkuCode review
+      shell: bash
+      env:
+        GITHUB_TOKEN: ${{ github.token }}
+        OKUCODE_REVIEW_URL: ${{ inputs.gateway-url }}/v1
+        OKUCODE_REVIEW_KEY: ${{ inputs.gateway-key }}
+        OKUCODE_REVIEW_MODEL: ${{ inputs.model }}
+        PR_NUMBER: ${{ github.event.pull_request.number }}
+        FAIL_ON: ${{ inputs.fail-on }}
+      run: |
+        if [ -z "$PR_NUMBER" ]; then echo "OkuCode review runs on pull_request events only."; exit 0; fi
+        git fetch --no-tags origin "$GITHUB_BASE_REF" >/dev/null 2>&1 || true
+        bun "$GITHUB_ACTION_PATH/../review/review.ts" --pr "$PR_NUMBER" --post ${FAIL_ON:+--fail-on "$FAIL_ON"}

@@ -1,0 +1,25 @@
+# The same review in Azure DevOps (FR-55). Needs the okucode repository checked out next to the code
+# (resources.repositories) and the variables OKUCODE_GATEWAY_URL / OKUCODE_GATEWAY_KEY (secret).
+# Azure posts nothing to GitHub here: the review is printed in the pipeline log, and --fail-on fails the run.
+trigger: none
+pr: [main]
+pool: { vmImage: ubuntu-latest }
+resources:
+  repositories:
+    - repository: okucode
+      type: github
+      name: OKUTOBUS-TECH/okucode
+      ref: develop
+      endpoint: github
+steps:
+  - checkout: self
+    fetchDepth: 0
+  - checkout: okucode
+  - script: curl -fsSL https://github.com/oven-sh/bun/releases/download/bun-v1.4.3/bun-linux-x64.zip -o bun.zip && unzip -q bun.zip
+    displayName: Bun
+  - script: ./bun-linux-x64/bun okucode/okutobus/review/review.ts --dir "$(Build.Repository.Name)" --base "$(System.PullRequest.TargetBranch)" --fail-on high
+    displayName: OkuCode review
+    env:
+      OKUCODE_REVIEW_URL: $(OKUCODE_GATEWAY_URL)/v1
+      OKUCODE_REVIEW_KEY: $(OKUCODE_GATEWAY_KEY)
+      OKUCODE_REVIEW_MODEL: okucode-main
