@@ -237,12 +237,25 @@ const layer = Layer.effect(
   }),
 )
 
+const REPO_MAP_REFRESH_MS = 10 * 60_000
+const repoMapCache = new Map<string, { at: number; map: Promise<string | undefined> }>()
+const cachedShortMap = (directory: string) => {
+  const known = repoMapCache.get(directory)
+  if (known && Date.now() - known.at < REPO_MAP_REFRESH_MS) return known.map
+  const map = OkuRepoMap.short(directory)
+  repoMapCache.set(directory, { at: Date.now(), map })
+  map.catch(() => repoMapCache.delete(directory))
+  return map
+}
+
 // Okutobus SRS FR-18: a short repository map (main source files with their classes and functions) in code projects.
 const repoMapInstructions = (directory: string) =>
   Instructions.make<string>({
     key: Instructions.Key.make("okucode/repo-map"),
     codec: Schema.toCodecJson(Schema.String),
-    read: Effect.tryPromise(() => OkuRepoMap.short(directory)).pipe(
+    // The map is refreshed at most every 10 minutes: a new map after every edit made small models answer the map
+    // ("The repository map has been updated...") instead of the user. The repo_map tool always reads the current files.
+    read: Effect.tryPromise(() => cachedShortMap(directory)).pipe(
       Effect.map((map) => map ?? Instructions.removed),
       Effect.orElseSucceed(() => Instructions.removed),
     ),
@@ -255,7 +268,13 @@ const repoMapInstructions = (directory: string) =>
           map,
           "</repo_map>",
         ].join("\n"),
-      changed: (_, map) => ["The repository map has changed. This map replaces the previous one.", "<repo_map>", map, "</repo_map>"].join("\n"),
+      changed: (_, map) =>
+        [
+          "Background update, for reference only: the repository map below replaces the previous one. Do not mention it or reply to it; carry on with the user's request.",
+          "<repo_map>",
+          map,
+          "</repo_map>",
+        ].join("\n"),
       removed: () => "The repository map is no longer available.",
     },
   })
