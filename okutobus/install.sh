@@ -169,7 +169,7 @@ else
   for _ in 1 2 3 4 5 6 7 8 9 10; do ollama list >/dev/null 2>&1 && break; sleep 2; done
   ollama list >/dev/null 2>&1 || fail "Ollama is not running. Start it (macOS: open the Ollama app · Linux: sudo systemctl start ollama) and run the installer again."
   note "memory: ${MEMORY_GB} GB, so the main model is $BIG"
-  for model in "$BIG" "$SMALL"; do
+  for model in "$BIG" "$SMALL" nomic-embed-text; do
     if ollama list | awk '{print $1}' | grep -qx "$model"; then ok "$model already downloaded"; else note "downloading $model (several GB, can take a while)..."; ollama pull "$model" || fail "could not download $model"; ok "$model"; fi
   done
   if ! ollama list | awk '{print $1}' | grep -q "^$MAIN"; then

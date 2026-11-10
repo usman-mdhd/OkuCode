@@ -29,6 +29,7 @@ Then open a new terminal and run `okucode web`.
 - Computers with 16 GB of memory or more: `qwen2.5-coder:14b` as the main model (with a 16k context window) and
   `qwen2.5-coder:3b` for chat titles.
 - Under 16 GB: `qwen2.5-coder:7b` instead of 14B.
+- `nomic-embed-text` (about 270 MB) for semantic search: finding code by what it does.
 - Settings you already have in `~/.config/opencode/opencode.json` are never changed; only missing ones are added
   (a backup is saved first).
 
