@@ -18,6 +18,7 @@ import { Location } from "../../location.js"
 import { FileAccess } from "../../file-access.js"
 import { Permission } from "../../permission.js"
 import { fileDiff } from "./file-diff.js"
+import { OkuLsp } from "../../okutobus/lsp.js"
 
 export const name = "edit"
 
@@ -313,11 +314,18 @@ export const Plugin = {
               } satisfies Output
             }).pipe(
               fileMutation.withLock([FileAccess.resolvePath(location.directory, input.path)]),
-              Effect.map((output) => ({
-                output,
-                content: `Edited ${output.files[0]?.file} (${output.replacements} replacement${output.replacements === 1 ? "" : "s"})`,
-                metadata: { files: output.files },
-              })),
+              // Okutobus (OkuCode) FR-17: the file's errors from the language server, for the model and the chat.
+              Effect.flatMap((output) =>
+                Effect.promise(() =>
+                  OkuLsp.check(FileAccess.resolvePath(location.directory, input.path), location.directory),
+                ).pipe(
+                  Effect.map((diagnostics) => ({
+                    output,
+                    content: `Edited ${output.files[0]?.file} (${output.replacements} replacement${output.replacements === 1 ? "" : "s"})${OkuLsp.report(diagnostics)}`,
+                    metadata: { files: output.files, ...(diagnostics.length ? { diagnostics: { [input.path]: diagnostics } } : {}) },
+                  })),
+                ),
+              ),
               Effect.mapError((error) =>
                 error instanceof ToolFailure
                   ? error

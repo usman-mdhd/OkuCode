@@ -14,10 +14,12 @@ import { Environment } from "../../environment/index.js"
 import { FileMutation } from "../../file-mutation.js"
 import { Formatter } from "../../formatter.js"
 import { FileAccess } from "../../file-access.js"
+import { Location } from "../../location.js"
 import { Permission } from "../../permission.js"
 import { fileDiff } from "./file-diff.js"
 import { extname } from "node:path"
 import { DOCUMENT_TYPES, render } from "./document.js"
+import { OkuLsp } from "../../okutobus/lsp.js"
 
 export const name = "write"
 
@@ -53,6 +55,7 @@ export const Plugin = {
     const environment = yield* Environment.Service
     const formatter = yield* Formatter.Service
     const permission = yield* Permission.Service
+    const location = yield* Location.Service
 
     yield* ctx.tool
       .transform((editor) =>
@@ -101,7 +104,20 @@ export const Plugin = {
               }
               return result
             }).pipe(
-              Effect.map((output) => ({ output, content: toModelContent(output) })),
+              // Okutobus (OkuCode) FR-17: the file's errors from the language server, for the model and the chat.
+              Effect.flatMap((output) =>
+                Effect.promise(() =>
+                  DOCUMENT_TYPES.has(extname(input.path).toLowerCase())
+                    ? Promise.resolve([] as OkuLsp.Diagnostic[])
+                    : OkuLsp.check(FileAccess.resolvePath(location.directory, input.path), location.directory),
+                ).pipe(
+                  Effect.map((diagnostics) => ({
+                    output,
+                    content: `${toModelContent(output)}${OkuLsp.report(diagnostics)}`,
+                    ...(diagnostics.length ? { metadata: { diagnostics: { [input.path]: diagnostics } } } : {}),
+                  })),
+                ),
+              ),
               Effect.mapError((error) => new ToolFailure({ message: `Unable to write ${input.path}`, error })),
             ),
         }),

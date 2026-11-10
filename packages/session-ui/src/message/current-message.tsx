@@ -142,6 +142,56 @@ function InjectionNotice(props: { tools: readonly SessionMessageAssistantTool[] 
   )
 }
 
+// Okutobus (OkuCode) FR-17: errors the language server found in a file after an edit.
+type CodeError = { file: string; line: number; message: string }
+function codeErrors(tools: readonly SessionMessageAssistantTool[]): CodeError[] {
+  return tools.flatMap((tool) => {
+    const diagnostics = currentToolMetadata(tool).diagnostics
+    if (!diagnostics || typeof diagnostics !== "object") return []
+    return Object.entries(diagnostics as Record<string, unknown>).flatMap(([file, list]) =>
+      (Array.isArray(list) ? list : []).flatMap((item) => {
+        const value = item as { severity?: number; message?: unknown; range?: { start?: { line?: number } } }
+        if ((value.severity ?? 1) !== 1 || typeof value.message !== "string") return []
+        return [{ file, line: (value.range?.start?.line ?? 0) + 1, message: value.message.split("\n")[0]! }]
+      }),
+    )
+  })
+}
+
+function CodeErrorsNotice(props: { tools: readonly SessionMessageAssistantTool[] }) {
+  const errors = () => codeErrors(props.tools)
+  return (
+    <Show when={errors().length > 0}>
+      <div
+        data-slot="okucode-code-errors"
+        role="note"
+        style={{
+          margin: "6px 0 2px",
+          padding: "8px 12px",
+          "border-radius": "10px",
+          border: "1px solid rgba(242, 85, 90, 0.45)",
+          background: "rgba(242, 85, 90, 0.06)",
+          color: "#f2555a",
+          "font-size": "13px",
+          "line-height": "1.5",
+        }}
+      >
+        <div>
+          {errors().length === 1 ? "1 code error" : `${errors().length} code errors`} after this change (the AI is told
+          to fix them):
+        </div>
+        <For each={errors().slice(0, 5)}>
+          {(error) => (
+            <div style={{ "font-family": "var(--font-family-mono, monospace)", "font-size": "12px" }}>
+              {error.file}:{error.line} {error.message}
+            </div>
+          )}
+        </For>
+      </div>
+    </Show>
+  )
+}
+
 export function SessionContextToolGroup(props: ComponentProps<typeof CurrentContextToolGroup>) {
   const tools = () =>
     props.parts.filter((part): part is SessionMessageAssistantTool => "type" in part && part.type === "tool")
@@ -150,6 +200,7 @@ export function SessionContextToolGroup(props: ComponentProps<typeof CurrentCont
       <CurrentContextToolGroup {...props} />
       <Show when={tools().length > 0}>
         <InjectionNotice tools={tools()} />
+        <CodeErrorsNotice tools={tools()} />
       </Show>
     </>
   )
@@ -171,11 +222,14 @@ export function SessionFileToolGroup(props: {
   onSizeChange?: () => void
 }) {
   return (
-    <CurrentFileToolGroup
-      tools={props.tools}
-      fileOpen={props.fileOpen}
-      onFileOpenChange={props.onFileOpenChange}
-      onSizeChange={props.onSizeChange}
-    />
+    <>
+      <CurrentFileToolGroup
+        tools={props.tools}
+        fileOpen={props.fileOpen}
+        onFileOpenChange={props.onFileOpenChange}
+        onSizeChange={props.onSizeChange}
+      />
+      <CodeErrorsNotice tools={props.tools} />
+    </>
   )
 }

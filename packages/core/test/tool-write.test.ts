@@ -25,7 +25,7 @@ import { toolIdentity, executeTool, registerToolPlugin, toolDefinitions } from "
 const writeToolNode = makeLocationNode({
   name: "test/write-tool-plugin",
   layer: Layer.effectDiscard(registerToolPlugin(WriteTool.Plugin)),
-  deps: [Tool.node, FileAccess.node, FileMutation.node, Environment.node, Formatter.node, Permission.node],
+  deps: [Tool.node, FileAccess.node, FileMutation.node, Environment.node, Formatter.node, Location.node, Permission.node],
 })
 
 const sessionID = Session.ID.make("ses_write_tool_test")

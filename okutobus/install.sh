@@ -240,6 +240,13 @@ fi
 mkdir -p "$HOME/OkuCode-Chats"
 
 # ---------- 7. web UI ----------
+# FR-17: language servers, so OkuCode sees code errors after each edit (Python, TypeScript/JavaScript).
+if bun add -g pyright@1.1.390 typescript-language-server@4.3.3 typescript@5.6.3 >>"$HOME_DIR/install.log" 2>&1; then
+  ok "language servers for code errors (Python, TypeScript/JavaScript)"
+else
+  note "language servers not installed; OkuCode still checks the syntax after edits"
+fi
+
 step "7/7 Building the web UI"
 (cd "$ROOT/packages/app" && bun run build >>"$HOME_DIR/install.log" 2>&1) || fail "web UI build failed. Details: $HOME_DIR/install.log"
 ok "built"
