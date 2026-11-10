@@ -45,9 +45,10 @@ type Options = {
   dir: string
 }
 
+/** A problem to report to the person (the command prints it and exits 2). */
+export class ReviewError extends Error {}
 function fail(message: string): never {
-  console.error(`okucode review: ${message}`)
-  process.exit(2)
+  throw new ReviewError(message)
 }
 
 export function parseArgs(argv: string[], env = process.env): Options {
@@ -239,21 +240,27 @@ export async function post(options: Options, body: string, token = process.env.G
 }
 
 if (import.meta.main) {
-  const options = parseArgs(process.argv.slice(2))
-  const changes = diff(options.dir, options.base)
-  if (!changes.text) {
-    console.log(`okucode review: no changes against ${changes.base}.`)
-    process.exit(0)
-  }
-  const target = model(options)
-  console.error(`okucode review: reviewing the changes against ${changes.base} with ${target.model}...`)
-  const text = await review(changes.text, target)
-  console.log(text)
-  if (options.post)
-    console.error(`okucode review: ${await post(options, text)} the review on pull request #${options.pr}.`)
-  const top = worst(text)
-  if (options.failOn && top && LEVELS[top] >= LEVELS[options.failOn]) {
-    console.error(`okucode review: found a ${top}-severity issue (--fail-on ${options.failOn}).`)
-    process.exit(1)
+  try {
+    const options = parseArgs(process.argv.slice(2))
+    const changes = diff(options.dir, options.base)
+    if (!changes.text) {
+      console.log(`okucode review: no changes against ${changes.base}.`)
+      process.exit(0)
+    }
+    const target = model(options)
+    console.error(`okucode review: reviewing the changes against ${changes.base} with ${target.model}...`)
+    const text = await review(changes.text, target)
+    console.log(text)
+    if (options.post)
+      console.error(`okucode review: ${await post(options, text)} the review on pull request #${options.pr}.`)
+    const top = worst(text)
+    if (options.failOn && top && LEVELS[top] >= LEVELS[options.failOn]) {
+      console.error(`okucode review: found a ${top}-severity issue (--fail-on ${options.failOn}).`)
+      process.exit(1)
+    }
+  } catch (error) {
+    if (!(error instanceof ReviewError)) throw error
+    console.error(`okucode review: ${error.message}`)
+    process.exit(2)
   }
 }
