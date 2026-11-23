@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test"
 import { mkdtempSync } from "node:fs"
 import { tmpdir } from "node:os"
 import path from "node:path"
-import { UsageLog } from "./usage-log"
+import { UsageLog } from "./usage-log.js"
 
 const call = (over: Partial<UsageLog.Entry>): UsageLog.Entry => ({
   time: "2026-11-04T10:00:00.000Z",
